@@ -1,0 +1,2006 @@
+{
+  "schemaVersion": 1,
+  "target": {
+    "mindustryVersion": "v159.7",
+    "dataPatchFormatVersion": 2
+  },
+  "source": {
+    "relativePath": "core/src/mindustry/mod/ClassMap.java",
+    "sha256": "50B6DE2DBBAF69B2A6B4C5F036C2DD74A0AEBC30D444B5C6994EA8A1990B4C72"
+  },
+  "declaredPutCount": 497,
+  "effectiveKeyCount": 496,
+  "note": "DataPatcher sets ContentParser.allowClassResolution=false. Only these effective short names may resolve; presence here does not mean a class is valid as a root ContentAsset or has the constructor required by that parser context.",
+  "duplicateKeys": {
+    "DuctBridgeBuild": [
+      "mindustry.world.blocks.distribution.DirectionLiquidBridge.DuctBridgeBuild",
+      "mindustry.world.blocks.distribution.DuctBridge.DuctBridgeBuild"
+    ]
+  },
+  "classes": {
+    "Ability": {
+      "fqcn": "mindustry.entities.abilities.Ability",
+      "category": "ability"
+    },
+    "Accelerator": {
+      "fqcn": "mindustry.world.blocks.campaign.Accelerator",
+      "category": "block-or-building"
+    },
+    "AcceleratorBuild": {
+      "fqcn": "mindustry.world.blocks.campaign.Accelerator.AcceleratorBuild",
+      "category": "block-or-building"
+    },
+    "AirBlock": {
+      "fqcn": "mindustry.world.blocks.environment.AirBlock",
+      "category": "block-or-building"
+    },
+    "AmmoEntry": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.Turret.AmmoEntry",
+      "category": "block-or-building"
+    },
+    "ArmorPlateAbility": {
+      "fqcn": "mindustry.entities.abilities.ArmorPlateAbility",
+      "category": "ability"
+    },
+    "ArmoredConduit": {
+      "fqcn": "mindustry.world.blocks.liquid.ArmoredConduit",
+      "category": "block-or-building"
+    },
+    "ArmoredConduitBuild": {
+      "fqcn": "mindustry.world.blocks.liquid.ArmoredConduit.ArmoredConduitBuild",
+      "category": "block-or-building"
+    },
+    "ArmoredConveyor": {
+      "fqcn": "mindustry.world.blocks.distribution.ArmoredConveyor",
+      "category": "block-or-building"
+    },
+    "ArmoredConveyorBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.ArmoredConveyor.ArmoredConveyorBuild",
+      "category": "block-or-building"
+    },
+    "ArtilleryBulletType": {
+      "fqcn": "mindustry.entities.bullet.ArtilleryBulletType",
+      "category": "bullet"
+    },
+    "AssemblerAI": {
+      "fqcn": "mindustry.ai.types.AssemblerAI",
+      "category": "ai-controller"
+    },
+    "AssemblerUnitPlan": {
+      "fqcn": "mindustry.world.blocks.units.UnitAssembler.AssemblerUnitPlan",
+      "category": "block-or-building"
+    },
+    "AttributeCrafter": {
+      "fqcn": "mindustry.world.blocks.production.AttributeCrafter",
+      "category": "block-or-building"
+    },
+    "AttributeCrafterBuild": {
+      "fqcn": "mindustry.world.blocks.production.AttributeCrafter.AttributeCrafterBuild",
+      "category": "block-or-building"
+    },
+    "Attributes": {
+      "fqcn": "mindustry.world.blocks.Attributes",
+      "category": "block-or-building"
+    },
+    "AutoDoor": {
+      "fqcn": "mindustry.world.blocks.defense.AutoDoor",
+      "category": "block-or-building"
+    },
+    "AutoDoorBuild": {
+      "fqcn": "mindustry.world.blocks.defense.AutoDoor.AutoDoorBuild",
+      "category": "block-or-building"
+    },
+    "Autotiler": {
+      "fqcn": "mindustry.world.blocks.Autotiler",
+      "category": "block-or-building"
+    },
+    "AutotilerHolder": {
+      "fqcn": "mindustry.world.blocks.Autotiler.AutotilerHolder",
+      "category": "block-or-building"
+    },
+    "BaseShield": {
+      "fqcn": "mindustry.world.blocks.defense.BaseShield",
+      "category": "block-or-building"
+    },
+    "BaseShieldBuild": {
+      "fqcn": "mindustry.world.blocks.defense.BaseShield.BaseShieldBuild",
+      "category": "block-or-building"
+    },
+    "BaseTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.BaseTurret",
+      "category": "block-or-building"
+    },
+    "BaseTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.BaseTurret.BaseTurretBuild",
+      "category": "block-or-building"
+    },
+    "BasicBulletType": {
+      "fqcn": "mindustry.entities.bullet.BasicBulletType",
+      "category": "bullet"
+    },
+    "Battery": {
+      "fqcn": "mindustry.world.blocks.power.Battery",
+      "category": "block-or-building"
+    },
+    "BatteryBuild": {
+      "fqcn": "mindustry.world.blocks.power.Battery.BatteryBuild",
+      "category": "block-or-building"
+    },
+    "BeamDrill": {
+      "fqcn": "mindustry.world.blocks.production.BeamDrill",
+      "category": "block-or-building"
+    },
+    "BeamDrillBuild": {
+      "fqcn": "mindustry.world.blocks.production.BeamDrill.BeamDrillBuild",
+      "category": "block-or-building"
+    },
+    "BeamNode": {
+      "fqcn": "mindustry.world.blocks.power.BeamNode",
+      "category": "block-or-building"
+    },
+    "BeamNodeBuild": {
+      "fqcn": "mindustry.world.blocks.power.BeamNode.BeamNodeBuild",
+      "category": "block-or-building"
+    },
+    "Block": {
+      "fqcn": "mindustry.world.Block",
+      "category": "block-or-building"
+    },
+    "BlockProducer": {
+      "fqcn": "mindustry.world.blocks.payloads.BlockProducer",
+      "category": "block-or-building"
+    },
+    "BlockProducerBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.BlockProducer.BlockProducerBuild",
+      "category": "block-or-building"
+    },
+    "BombBulletType": {
+      "fqcn": "mindustry.entities.bullet.BombBulletType",
+      "category": "bullet"
+    },
+    "BoostAI": {
+      "fqcn": "mindustry.ai.types.BoostAI",
+      "category": "ai-controller"
+    },
+    "BufferedItemBridge": {
+      "fqcn": "mindustry.world.blocks.distribution.BufferedItemBridge",
+      "category": "block-or-building"
+    },
+    "BufferedItemBridgeBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.BufferedItemBridge.BufferedItemBridgeBuild",
+      "category": "block-or-building"
+    },
+    "BuildPayload": {
+      "fqcn": "mindustry.world.blocks.payloads.BuildPayload",
+      "category": "block-or-building"
+    },
+    "BuildTurret": {
+      "fqcn": "mindustry.world.blocks.defense.BuildTurret",
+      "category": "block-or-building"
+    },
+    "BuildTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.BuildTurret.BuildTurretBuild",
+      "category": "block-or-building"
+    },
+    "BuildWeapon": {
+      "fqcn": "mindustry.type.weapons.BuildWeapon",
+      "category": "weapon"
+    },
+    "BuilderAI": {
+      "fqcn": "mindustry.ai.types.BuilderAI",
+      "category": "ai-controller"
+    },
+    "BulletEntry": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.Turret.BulletEntry",
+      "category": "block-or-building"
+    },
+    "BulletHandler": {
+      "fqcn": "mindustry.entities.pattern.ShootPattern.BulletHandler",
+      "category": "shoot-pattern"
+    },
+    "BulletType": {
+      "fqcn": "mindustry.entities.bullet.BulletType",
+      "category": "bullet"
+    },
+    "BurstDrill": {
+      "fqcn": "mindustry.world.blocks.production.BurstDrill",
+      "category": "block-or-building"
+    },
+    "BurstDrillBuild": {
+      "fqcn": "mindustry.world.blocks.production.BurstDrill.BurstDrillBuild",
+      "category": "block-or-building"
+    },
+    "CanvasBlock": {
+      "fqcn": "mindustry.world.blocks.logic.CanvasBlock",
+      "category": "block-or-building"
+    },
+    "CanvasBuild": {
+      "fqcn": "mindustry.world.blocks.logic.CanvasBlock.CanvasBuild",
+      "category": "block-or-building"
+    },
+    "CargoAI": {
+      "fqcn": "mindustry.ai.types.CargoAI",
+      "category": "ai-controller"
+    },
+    "Category": {
+      "fqcn": "mindustry.type.Category",
+      "category": "value-or-content"
+    },
+    "CellLiquid": {
+      "fqcn": "mindustry.type.CellLiquid",
+      "category": "value-or-content"
+    },
+    "ChainedBuilding": {
+      "fqcn": "mindustry.world.blocks.distribution.ChainedBuilding",
+      "category": "block-or-building"
+    },
+    "CharacterOverlay": {
+      "fqcn": "mindustry.world.blocks.environment.CharacterOverlay",
+      "category": "block-or-building"
+    },
+    "Cliff": {
+      "fqcn": "mindustry.world.blocks.environment.Cliff",
+      "category": "block-or-building"
+    },
+    "ColoredFloor": {
+      "fqcn": "mindustry.world.blocks.environment.ColoredFloor",
+      "category": "block-or-building"
+    },
+    "ColoredWall": {
+      "fqcn": "mindustry.world.blocks.environment.ColoredWall",
+      "category": "block-or-building"
+    },
+    "CommandAI": {
+      "fqcn": "mindustry.ai.types.CommandAI",
+      "category": "ai-controller"
+    },
+    "Conduit": {
+      "fqcn": "mindustry.world.blocks.liquid.Conduit",
+      "category": "block-or-building"
+    },
+    "ConduitBuild": {
+      "fqcn": "mindustry.world.blocks.liquid.Conduit.ConduitBuild",
+      "category": "block-or-building"
+    },
+    "ConstructBlock": {
+      "fqcn": "mindustry.world.blocks.ConstructBlock",
+      "category": "block-or-building"
+    },
+    "ConstructBuild": {
+      "fqcn": "mindustry.world.blocks.ConstructBlock.ConstructBuild",
+      "category": "block-or-building"
+    },
+    "Constructor": {
+      "fqcn": "mindustry.world.blocks.payloads.Constructor",
+      "category": "block-or-building"
+    },
+    "ConstructorBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.Constructor.ConstructorBuild",
+      "category": "block-or-building"
+    },
+    "Consume": {
+      "fqcn": "mindustry.world.consumers.Consume",
+      "category": "consume"
+    },
+    "ConsumeCoolant": {
+      "fqcn": "mindustry.world.consumers.ConsumeCoolant",
+      "category": "consume"
+    },
+    "ConsumeGenerator": {
+      "fqcn": "mindustry.world.blocks.power.ConsumeGenerator",
+      "category": "block-or-building"
+    },
+    "ConsumeGeneratorBuild": {
+      "fqcn": "mindustry.world.blocks.power.ConsumeGenerator.ConsumeGeneratorBuild",
+      "category": "block-or-building"
+    },
+    "ConsumeItemCharged": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemCharged",
+      "category": "consume"
+    },
+    "ConsumeItemDynamic": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemDynamic",
+      "category": "consume"
+    },
+    "ConsumeItemEfficiency": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemEfficiency",
+      "category": "consume"
+    },
+    "ConsumeItemExplode": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemExplode",
+      "category": "consume"
+    },
+    "ConsumeItemExplosive": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemExplosive",
+      "category": "consume"
+    },
+    "ConsumeItemFilter": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemFilter",
+      "category": "consume"
+    },
+    "ConsumeItemFlammable": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemFlammable",
+      "category": "consume"
+    },
+    "ConsumeItemList": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemList",
+      "category": "consume"
+    },
+    "ConsumeItemRadioactive": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemRadioactive",
+      "category": "consume"
+    },
+    "ConsumeItems": {
+      "fqcn": "mindustry.world.consumers.ConsumeItems",
+      "category": "consume"
+    },
+    "ConsumeLiquid": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquid",
+      "category": "consume"
+    },
+    "ConsumeLiquidBase": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquidBase",
+      "category": "consume"
+    },
+    "ConsumeLiquidFilter": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquidFilter",
+      "category": "consume"
+    },
+    "ConsumeLiquidFlammable": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquidFlammable",
+      "category": "consume"
+    },
+    "ConsumeLiquids": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquids",
+      "category": "consume"
+    },
+    "ConsumeLiquidsDynamic": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquidsDynamic",
+      "category": "consume"
+    },
+    "ConsumePayloadDynamic": {
+      "fqcn": "mindustry.world.consumers.ConsumePayloadDynamic",
+      "category": "consume"
+    },
+    "ConsumePayloadFilter": {
+      "fqcn": "mindustry.world.consumers.ConsumePayloadFilter",
+      "category": "consume"
+    },
+    "ConsumePayloads": {
+      "fqcn": "mindustry.world.consumers.ConsumePayloads",
+      "category": "consume"
+    },
+    "ConsumePower": {
+      "fqcn": "mindustry.world.consumers.ConsumePower",
+      "category": "consume"
+    },
+    "ConsumePowerCondition": {
+      "fqcn": "mindustry.world.consumers.ConsumePowerCondition",
+      "category": "consume"
+    },
+    "ConsumePowerDynamic": {
+      "fqcn": "mindustry.world.consumers.ConsumePowerDynamic",
+      "category": "consume"
+    },
+    "ContainerStat": {
+      "fqcn": "mindustry.world.blocks.storage.Unloader.ContainerStat",
+      "category": "block-or-building"
+    },
+    "ContinuousBulletType": {
+      "fqcn": "mindustry.entities.bullet.ContinuousBulletType",
+      "category": "bullet"
+    },
+    "ContinuousFlameBulletType": {
+      "fqcn": "mindustry.entities.bullet.ContinuousFlameBulletType",
+      "category": "bullet"
+    },
+    "ContinuousLaserBulletType": {
+      "fqcn": "mindustry.entities.bullet.ContinuousLaserBulletType",
+      "category": "bullet"
+    },
+    "ContinuousLiquidTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ContinuousLiquidTurret",
+      "category": "block-or-building"
+    },
+    "ContinuousLiquidTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ContinuousLiquidTurret.ContinuousLiquidTurretBuild",
+      "category": "block-or-building"
+    },
+    "ContinuousTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ContinuousTurret",
+      "category": "block-or-building"
+    },
+    "ContinuousTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ContinuousTurret.ContinuousTurretBuild",
+      "category": "block-or-building"
+    },
+    "ControlBlock": {
+      "fqcn": "mindustry.world.blocks.ControlBlock",
+      "category": "block-or-building"
+    },
+    "Conveyor": {
+      "fqcn": "mindustry.world.blocks.distribution.Conveyor",
+      "category": "block-or-building"
+    },
+    "ConveyorBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.Conveyor.ConveyorBuild",
+      "category": "block-or-building"
+    },
+    "CoreBlock": {
+      "fqcn": "mindustry.world.blocks.storage.CoreBlock",
+      "category": "block-or-building"
+    },
+    "CoreBuild": {
+      "fqcn": "mindustry.world.blocks.storage.CoreBlock.CoreBuild",
+      "category": "block-or-building"
+    },
+    "DefenderAI": {
+      "fqcn": "mindustry.ai.types.DefenderAI",
+      "category": "ai-controller"
+    },
+    "DirectionBridge": {
+      "fqcn": "mindustry.world.blocks.distribution.DirectionBridge",
+      "category": "block-or-building"
+    },
+    "DirectionBridgeBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.DirectionBridge.DirectionBridgeBuild",
+      "category": "block-or-building"
+    },
+    "DirectionLiquidBridge": {
+      "fqcn": "mindustry.world.blocks.distribution.DirectionLiquidBridge",
+      "category": "block-or-building"
+    },
+    "DirectionalUnloader": {
+      "fqcn": "mindustry.world.blocks.distribution.DirectionalUnloader",
+      "category": "block-or-building"
+    },
+    "DirectionalUnloaderBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.DirectionalUnloader.DirectionalUnloaderBuild",
+      "category": "block-or-building"
+    },
+    "Door": {
+      "fqcn": "mindustry.world.blocks.defense.Door",
+      "category": "block-or-building"
+    },
+    "DoorBuild": {
+      "fqcn": "mindustry.world.blocks.defense.Door.DoorBuild",
+      "category": "block-or-building"
+    },
+    "DrawArcSmelt": {
+      "fqcn": "mindustry.world.draw.DrawArcSmelt",
+      "category": "draw-block"
+    },
+    "DrawBlock": {
+      "fqcn": "mindustry.world.draw.DrawBlock",
+      "category": "draw-block"
+    },
+    "DrawBlockParts": {
+      "fqcn": "mindustry.world.draw.DrawBlockParts",
+      "category": "draw-block"
+    },
+    "DrawBlurSpin": {
+      "fqcn": "mindustry.world.draw.DrawBlurSpin",
+      "category": "draw-block"
+    },
+    "DrawBubbles": {
+      "fqcn": "mindustry.world.draw.DrawBubbles",
+      "category": "draw-block"
+    },
+    "DrawCells": {
+      "fqcn": "mindustry.world.draw.DrawCells",
+      "category": "draw-block"
+    },
+    "DrawCircles": {
+      "fqcn": "mindustry.world.draw.DrawCircles",
+      "category": "draw-block"
+    },
+    "DrawCrucibleFlame": {
+      "fqcn": "mindustry.world.draw.DrawCrucibleFlame",
+      "category": "draw-block"
+    },
+    "DrawCultivator": {
+      "fqcn": "mindustry.world.draw.DrawCultivator",
+      "category": "draw-block"
+    },
+    "DrawDefault": {
+      "fqcn": "mindustry.world.draw.DrawDefault",
+      "category": "draw-block"
+    },
+    "DrawFade": {
+      "fqcn": "mindustry.world.draw.DrawFade",
+      "category": "draw-block"
+    },
+    "DrawFlame": {
+      "fqcn": "mindustry.world.draw.DrawFlame",
+      "category": "draw-block"
+    },
+    "DrawFrames": {
+      "fqcn": "mindustry.world.draw.DrawFrames",
+      "category": "draw-block"
+    },
+    "DrawGlowRegion": {
+      "fqcn": "mindustry.world.draw.DrawGlowRegion",
+      "category": "draw-block"
+    },
+    "DrawHeatInput": {
+      "fqcn": "mindustry.world.draw.DrawHeatInput",
+      "category": "draw-block"
+    },
+    "DrawHeatOutput": {
+      "fqcn": "mindustry.world.draw.DrawHeatOutput",
+      "category": "draw-block"
+    },
+    "DrawHeatRegion": {
+      "fqcn": "mindustry.world.draw.DrawHeatRegion",
+      "category": "draw-block"
+    },
+    "DrawLiquidOutputs": {
+      "fqcn": "mindustry.world.draw.DrawLiquidOutputs",
+      "category": "draw-block"
+    },
+    "DrawLiquidRegion": {
+      "fqcn": "mindustry.world.draw.DrawLiquidRegion",
+      "category": "draw-block"
+    },
+    "DrawLiquidTile": {
+      "fqcn": "mindustry.world.draw.DrawLiquidTile",
+      "category": "draw-block"
+    },
+    "DrawMulti": {
+      "fqcn": "mindustry.world.draw.DrawMulti",
+      "category": "draw-block"
+    },
+    "DrawMultiWeave": {
+      "fqcn": "mindustry.world.draw.DrawMultiWeave",
+      "category": "draw-block"
+    },
+    "DrawPart": {
+      "fqcn": "mindustry.entities.part.DrawPart",
+      "category": "draw-part"
+    },
+    "DrawParticles": {
+      "fqcn": "mindustry.world.draw.DrawParticles",
+      "category": "draw-block"
+    },
+    "DrawPistons": {
+      "fqcn": "mindustry.world.draw.DrawPistons",
+      "category": "draw-block"
+    },
+    "DrawPlasma": {
+      "fqcn": "mindustry.world.draw.DrawPlasma",
+      "category": "draw-block"
+    },
+    "DrawPower": {
+      "fqcn": "mindustry.world.draw.DrawPower",
+      "category": "draw-block"
+    },
+    "DrawPulseShape": {
+      "fqcn": "mindustry.world.draw.DrawPulseShape",
+      "category": "draw-block"
+    },
+    "DrawPumpLiquid": {
+      "fqcn": "mindustry.world.draw.DrawPumpLiquid",
+      "category": "draw-block"
+    },
+    "DrawRegion": {
+      "fqcn": "mindustry.world.draw.DrawRegion",
+      "category": "draw-block"
+    },
+    "DrawShape": {
+      "fqcn": "mindustry.world.draw.DrawShape",
+      "category": "draw-block"
+    },
+    "DrawSideRegion": {
+      "fqcn": "mindustry.world.draw.DrawSideRegion",
+      "category": "draw-block"
+    },
+    "DrawSoftParticles": {
+      "fqcn": "mindustry.world.draw.DrawSoftParticles",
+      "category": "draw-block"
+    },
+    "DrawSpikes": {
+      "fqcn": "mindustry.world.draw.DrawSpikes",
+      "category": "draw-block"
+    },
+    "DrawTurret": {
+      "fqcn": "mindustry.world.draw.DrawTurret",
+      "category": "draw-block"
+    },
+    "DrawWarmupRegion": {
+      "fqcn": "mindustry.world.draw.DrawWarmupRegion",
+      "category": "draw-block"
+    },
+    "DrawWeave": {
+      "fqcn": "mindustry.world.draw.DrawWeave",
+      "category": "draw-block"
+    },
+    "Drill": {
+      "fqcn": "mindustry.world.blocks.production.Drill",
+      "category": "block-or-building"
+    },
+    "DrillBuild": {
+      "fqcn": "mindustry.world.blocks.production.Drill.DrillBuild",
+      "category": "block-or-building"
+    },
+    "DriverBulletData": {
+      "fqcn": "mindustry.world.blocks.distribution.MassDriver.DriverBulletData",
+      "category": "block-or-building"
+    },
+    "DriverState": {
+      "fqcn": "mindustry.world.blocks.distribution.MassDriver.DriverState",
+      "category": "block-or-building"
+    },
+    "Duct": {
+      "fqcn": "mindustry.world.blocks.distribution.Duct",
+      "category": "block-or-building"
+    },
+    "DuctBridge": {
+      "fqcn": "mindustry.world.blocks.distribution.DuctBridge",
+      "category": "block-or-building"
+    },
+    "DuctBridgeBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.DuctBridge.DuctBridgeBuild",
+      "category": "block-or-building"
+    },
+    "DuctBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.Duct.DuctBuild",
+      "category": "block-or-building"
+    },
+    "DuctJunction": {
+      "fqcn": "mindustry.world.blocks.distribution.DuctJunction",
+      "category": "block-or-building"
+    },
+    "DuctJunctionBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.DuctJunction.DuctJunctionBuild",
+      "category": "block-or-building"
+    },
+    "DuctRouter": {
+      "fqcn": "mindustry.world.blocks.distribution.DuctRouter",
+      "category": "block-or-building"
+    },
+    "DuctRouterBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.DuctRouter.DuctRouterBuild",
+      "category": "block-or-building"
+    },
+    "EffectSpawnerPart": {
+      "fqcn": "mindustry.entities.part.EffectSpawnerPart",
+      "category": "draw-part"
+    },
+    "EmpBulletType": {
+      "fqcn": "mindustry.entities.bullet.EmpBulletType",
+      "category": "bullet"
+    },
+    "EmptyBulletType": {
+      "fqcn": "mindustry.entities.bullet.EmptyBulletType",
+      "category": "bullet"
+    },
+    "EmptyDataAbility": {
+      "fqcn": "mindustry.entities.abilities.EmptyDataAbility",
+      "category": "ability"
+    },
+    "EmptyFloor": {
+      "fqcn": "mindustry.world.blocks.environment.EmptyFloor",
+      "category": "block-or-building"
+    },
+    "EnergyFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.EnergyFieldAbility",
+      "category": "ability"
+    },
+    "ErekirUnitType": {
+      "fqcn": "mindustry.type.unit.ErekirUnitType",
+      "category": "unit-template"
+    },
+    "ErrorContent": {
+      "fqcn": "mindustry.type.ErrorContent",
+      "category": "value-or-content"
+    },
+    "ExplosionBulletType": {
+      "fqcn": "mindustry.entities.bullet.ExplosionBulletType",
+      "category": "bullet"
+    },
+    "ExplosionEffect": {
+      "fqcn": "mindustry.entities.effect.ExplosionEffect",
+      "category": "effect"
+    },
+    "ExplosionShield": {
+      "fqcn": "mindustry.world.blocks.ExplosionShield",
+      "category": "block-or-building"
+    },
+    "FireBulletType": {
+      "fqcn": "mindustry.entities.bullet.FireBulletType",
+      "category": "bullet"
+    },
+    "FlakBulletType": {
+      "fqcn": "mindustry.entities.bullet.FlakBulletType",
+      "category": "bullet"
+    },
+    "FlarePart": {
+      "fqcn": "mindustry.entities.part.FlarePart",
+      "category": "draw-part"
+    },
+    "Floor": {
+      "fqcn": "mindustry.world.blocks.environment.Floor",
+      "category": "block-or-building"
+    },
+    "FlyingAI": {
+      "fqcn": "mindustry.ai.types.FlyingAI",
+      "category": "ai-controller"
+    },
+    "FlyingFollowAI": {
+      "fqcn": "mindustry.ai.types.FlyingFollowAI",
+      "category": "ai-controller"
+    },
+    "ForceBuild": {
+      "fqcn": "mindustry.world.blocks.defense.ForceProjector.ForceBuild",
+      "category": "block-or-building"
+    },
+    "ForceFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.ForceFieldAbility",
+      "category": "ability"
+    },
+    "ForceProjector": {
+      "fqcn": "mindustry.world.blocks.defense.ForceProjector",
+      "category": "block-or-building"
+    },
+    "Fracker": {
+      "fqcn": "mindustry.world.blocks.production.Fracker",
+      "category": "block-or-building"
+    },
+    "FrackerBuild": {
+      "fqcn": "mindustry.world.blocks.production.Fracker.FrackerBuild",
+      "category": "block-or-building"
+    },
+    "GeneratorBuild": {
+      "fqcn": "mindustry.world.blocks.power.PowerGenerator.GeneratorBuild",
+      "category": "block-or-building"
+    },
+    "GenericCrafter": {
+      "fqcn": "mindustry.world.blocks.production.GenericCrafter",
+      "category": "block-or-building"
+    },
+    "GenericCrafterBuild": {
+      "fqcn": "mindustry.world.blocks.production.GenericCrafter.GenericCrafterBuild",
+      "category": "block-or-building"
+    },
+    "GraphicsType": {
+      "fqcn": "mindustry.world.blocks.logic.LogicDisplay.GraphicsType",
+      "category": "block-or-building"
+    },
+    "GroundAI": {
+      "fqcn": "mindustry.ai.types.GroundAI",
+      "category": "ai-controller"
+    },
+    "HaloPart": {
+      "fqcn": "mindustry.entities.part.HaloPart",
+      "category": "draw-part"
+    },
+    "HealBeamMount": {
+      "fqcn": "mindustry.type.weapons.RepairBeamWeapon.HealBeamMount",
+      "category": "weapon"
+    },
+    "HeatBlock": {
+      "fqcn": "mindustry.world.blocks.heat.HeatBlock",
+      "category": "block-or-building"
+    },
+    "HeatConductor": {
+      "fqcn": "mindustry.world.blocks.heat.HeatConductor",
+      "category": "block-or-building"
+    },
+    "HeatConductorBuild": {
+      "fqcn": "mindustry.world.blocks.heat.HeatConductor.HeatConductorBuild",
+      "category": "block-or-building"
+    },
+    "HeatConsumer": {
+      "fqcn": "mindustry.world.blocks.heat.HeatConsumer",
+      "category": "block-or-building"
+    },
+    "HeatCrafter": {
+      "fqcn": "mindustry.world.blocks.production.HeatCrafter",
+      "category": "block-or-building"
+    },
+    "HeatCrafterBuild": {
+      "fqcn": "mindustry.world.blocks.production.HeatCrafter.HeatCrafterBuild",
+      "category": "block-or-building"
+    },
+    "HeatProducer": {
+      "fqcn": "mindustry.world.blocks.heat.HeatProducer",
+      "category": "block-or-building"
+    },
+    "HeatProducerBuild": {
+      "fqcn": "mindustry.world.blocks.heat.HeatProducer.HeatProducerBuild",
+      "category": "block-or-building"
+    },
+    "HeaterGenerator": {
+      "fqcn": "mindustry.world.blocks.power.HeaterGenerator",
+      "category": "block-or-building"
+    },
+    "HeaterGeneratorBuild": {
+      "fqcn": "mindustry.world.blocks.power.HeaterGenerator.HeaterGeneratorBuild",
+      "category": "block-or-building"
+    },
+    "HoverPart": {
+      "fqcn": "mindustry.entities.part.HoverPart",
+      "category": "draw-part"
+    },
+    "HugAI": {
+      "fqcn": "mindustry.ai.types.HugAI",
+      "category": "ai-controller"
+    },
+    "ImpactReactor": {
+      "fqcn": "mindustry.world.blocks.power.ImpactReactor",
+      "category": "block-or-building"
+    },
+    "ImpactReactorBuild": {
+      "fqcn": "mindustry.world.blocks.power.ImpactReactor.ImpactReactorBuild",
+      "category": "block-or-building"
+    },
+    "Incinerator": {
+      "fqcn": "mindustry.world.blocks.production.Incinerator",
+      "category": "block-or-building"
+    },
+    "IncineratorBuild": {
+      "fqcn": "mindustry.world.blocks.production.Incinerator.IncineratorBuild",
+      "category": "block-or-building"
+    },
+    "InterceptorBulletType": {
+      "fqcn": "mindustry.entities.bullet.InterceptorBulletType",
+      "category": "bullet"
+    },
+    "Item": {
+      "fqcn": "mindustry.type.Item",
+      "category": "value-or-content"
+    },
+    "ItemBridge": {
+      "fqcn": "mindustry.world.blocks.distribution.ItemBridge",
+      "category": "block-or-building"
+    },
+    "ItemBridgeBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.ItemBridge.ItemBridgeBuild",
+      "category": "block-or-building"
+    },
+    "ItemEntry": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ItemTurret.ItemEntry",
+      "category": "block-or-building"
+    },
+    "ItemIncinerator": {
+      "fqcn": "mindustry.world.blocks.production.ItemIncinerator",
+      "category": "block-or-building"
+    },
+    "ItemIncineratorBuild": {
+      "fqcn": "mindustry.world.blocks.production.ItemIncinerator.ItemIncineratorBuild",
+      "category": "block-or-building"
+    },
+    "ItemSelection": {
+      "fqcn": "mindustry.world.blocks.ItemSelection",
+      "category": "block-or-building"
+    },
+    "ItemSeq": {
+      "fqcn": "mindustry.type.ItemSeq",
+      "category": "value-or-content"
+    },
+    "ItemSource": {
+      "fqcn": "mindustry.world.blocks.sandbox.ItemSource",
+      "category": "block-or-building"
+    },
+    "ItemSourceBuild": {
+      "fqcn": "mindustry.world.blocks.sandbox.ItemSource.ItemSourceBuild",
+      "category": "block-or-building"
+    },
+    "ItemStack": {
+      "fqcn": "mindustry.type.ItemStack",
+      "category": "value-or-content"
+    },
+    "ItemTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ItemTurret",
+      "category": "block-or-building"
+    },
+    "ItemTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ItemTurret.ItemTurretBuild",
+      "category": "block-or-building"
+    },
+    "ItemVoid": {
+      "fqcn": "mindustry.world.blocks.sandbox.ItemVoid",
+      "category": "block-or-building"
+    },
+    "ItemVoidBuild": {
+      "fqcn": "mindustry.world.blocks.sandbox.ItemVoid.ItemVoidBuild",
+      "category": "block-or-building"
+    },
+    "Junction": {
+      "fqcn": "mindustry.world.blocks.distribution.Junction",
+      "category": "block-or-building"
+    },
+    "JunctionBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.Junction.JunctionBuild",
+      "category": "block-or-building"
+    },
+    "LandingPad": {
+      "fqcn": "mindustry.world.blocks.campaign.LandingPad",
+      "category": "block-or-building"
+    },
+    "LandingPadBuild": {
+      "fqcn": "mindustry.world.blocks.campaign.LandingPad.LandingPadBuild",
+      "category": "block-or-building"
+    },
+    "LaserBoltBulletType": {
+      "fqcn": "mindustry.entities.bullet.LaserBoltBulletType",
+      "category": "bullet"
+    },
+    "LaserBulletType": {
+      "fqcn": "mindustry.entities.bullet.LaserBulletType",
+      "category": "bullet"
+    },
+    "LaserTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.LaserTurret",
+      "category": "block-or-building"
+    },
+    "LaserTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.LaserTurret.LaserTurretBuild",
+      "category": "block-or-building"
+    },
+    "LaunchAnimator": {
+      "fqcn": "mindustry.world.blocks.LaunchAnimator",
+      "category": "block-or-building"
+    },
+    "LaunchPad": {
+      "fqcn": "mindustry.world.blocks.campaign.LaunchPad",
+      "category": "block-or-building"
+    },
+    "LaunchPadBuild": {
+      "fqcn": "mindustry.world.blocks.campaign.LaunchPad.LaunchPadBuild",
+      "category": "block-or-building"
+    },
+    "LightBlock": {
+      "fqcn": "mindustry.world.blocks.power.LightBlock",
+      "category": "block-or-building"
+    },
+    "LightBuild": {
+      "fqcn": "mindustry.world.blocks.power.LightBlock.LightBuild",
+      "category": "block-or-building"
+    },
+    "LightningBulletType": {
+      "fqcn": "mindustry.entities.bullet.LightningBulletType",
+      "category": "bullet"
+    },
+    "Liquid": {
+      "fqcn": "mindustry.type.Liquid",
+      "category": "value-or-content"
+    },
+    "LiquidBlock": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidBlock",
+      "category": "block-or-building"
+    },
+    "LiquidBridge": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidBridge",
+      "category": "block-or-building"
+    },
+    "LiquidBridgeBuild": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidBridge.LiquidBridgeBuild",
+      "category": "block-or-building"
+    },
+    "LiquidBuild": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidBlock.LiquidBuild",
+      "category": "block-or-building"
+    },
+    "LiquidBulletType": {
+      "fqcn": "mindustry.entities.bullet.LiquidBulletType",
+      "category": "bullet"
+    },
+    "LiquidExplodeAbility": {
+      "fqcn": "mindustry.entities.abilities.LiquidExplodeAbility",
+      "category": "ability"
+    },
+    "LiquidJunction": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidJunction",
+      "category": "block-or-building"
+    },
+    "LiquidJunctionBuild": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidJunction.LiquidJunctionBuild",
+      "category": "block-or-building"
+    },
+    "LiquidRegenAbility": {
+      "fqcn": "mindustry.entities.abilities.LiquidRegenAbility",
+      "category": "ability"
+    },
+    "LiquidRouter": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidRouter",
+      "category": "block-or-building"
+    },
+    "LiquidRouterBuild": {
+      "fqcn": "mindustry.world.blocks.liquid.LiquidRouter.LiquidRouterBuild",
+      "category": "block-or-building"
+    },
+    "LiquidSource": {
+      "fqcn": "mindustry.world.blocks.sandbox.LiquidSource",
+      "category": "block-or-building"
+    },
+    "LiquidSourceBuild": {
+      "fqcn": "mindustry.world.blocks.sandbox.LiquidSource.LiquidSourceBuild",
+      "category": "block-or-building"
+    },
+    "LiquidStack": {
+      "fqcn": "mindustry.type.LiquidStack",
+      "category": "value-or-content"
+    },
+    "LiquidTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.LiquidTurret",
+      "category": "block-or-building"
+    },
+    "LiquidTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.LiquidTurret.LiquidTurretBuild",
+      "category": "block-or-building"
+    },
+    "LiquidVoid": {
+      "fqcn": "mindustry.world.blocks.sandbox.LiquidVoid",
+      "category": "block-or-building"
+    },
+    "LiquidVoidBuild": {
+      "fqcn": "mindustry.world.blocks.sandbox.LiquidVoid.LiquidVoidBuild",
+      "category": "block-or-building"
+    },
+    "LogicAI": {
+      "fqcn": "mindustry.ai.types.LogicAI",
+      "category": "ai-controller"
+    },
+    "LogicBlock": {
+      "fqcn": "mindustry.world.blocks.logic.LogicBlock",
+      "category": "block-or-building"
+    },
+    "LogicBuild": {
+      "fqcn": "mindustry.world.blocks.logic.LogicBlock.LogicBuild",
+      "category": "block-or-building"
+    },
+    "LogicDisplay": {
+      "fqcn": "mindustry.world.blocks.logic.LogicDisplay",
+      "category": "block-or-building"
+    },
+    "LogicDisplayBuild": {
+      "fqcn": "mindustry.world.blocks.logic.LogicDisplay.LogicDisplayBuild",
+      "category": "block-or-building"
+    },
+    "LogicLink": {
+      "fqcn": "mindustry.world.blocks.logic.LogicBlock.LogicLink",
+      "category": "block-or-building"
+    },
+    "LongPowerNode": {
+      "fqcn": "mindustry.world.blocks.power.LongPowerNode",
+      "category": "block-or-building"
+    },
+    "LongPowerNodeBuild": {
+      "fqcn": "mindustry.world.blocks.power.LongPowerNode.LongPowerNodeBuild",
+      "category": "block-or-building"
+    },
+    "MagneticStorm": {
+      "fqcn": "mindustry.type.weather.MagneticStorm",
+      "category": "weather"
+    },
+    "MapLocales": {
+      "fqcn": "mindustry.type.MapLocales",
+      "category": "value-or-content"
+    },
+    "MassDriver": {
+      "fqcn": "mindustry.world.blocks.distribution.MassDriver",
+      "category": "block-or-building"
+    },
+    "MassDriverBolt": {
+      "fqcn": "mindustry.entities.bullet.MassDriverBolt",
+      "category": "bullet"
+    },
+    "MassDriverBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.MassDriver.MassDriverBuild",
+      "category": "block-or-building"
+    },
+    "MemoryBlock": {
+      "fqcn": "mindustry.world.blocks.logic.MemoryBlock",
+      "category": "block-or-building"
+    },
+    "MemoryBuild": {
+      "fqcn": "mindustry.world.blocks.logic.MemoryBlock.MemoryBuild",
+      "category": "block-or-building"
+    },
+    "MendBuild": {
+      "fqcn": "mindustry.world.blocks.defense.MendProjector.MendBuild",
+      "category": "block-or-building"
+    },
+    "MendProjector": {
+      "fqcn": "mindustry.world.blocks.defense.MendProjector",
+      "category": "block-or-building"
+    },
+    "MessageBlock": {
+      "fqcn": "mindustry.world.blocks.logic.MessageBlock",
+      "category": "block-or-building"
+    },
+    "MessageBuild": {
+      "fqcn": "mindustry.world.blocks.logic.MessageBlock.MessageBuild",
+      "category": "block-or-building"
+    },
+    "MineWeapon": {
+      "fqcn": "mindustry.type.weapons.MineWeapon",
+      "category": "weapon"
+    },
+    "MinerAI": {
+      "fqcn": "mindustry.ai.types.MinerAI",
+      "category": "ai-controller"
+    },
+    "MissileAI": {
+      "fqcn": "mindustry.ai.types.MissileAI",
+      "category": "ai-controller"
+    },
+    "MissileBulletType": {
+      "fqcn": "mindustry.entities.bullet.MissileBulletType",
+      "category": "bullet"
+    },
+    "MissileUnitType": {
+      "fqcn": "mindustry.type.unit.MissileUnitType",
+      "category": "unit-template"
+    },
+    "MoveEffectAbility": {
+      "fqcn": "mindustry.entities.abilities.MoveEffectAbility",
+      "category": "ability"
+    },
+    "MoveLightningAbility": {
+      "fqcn": "mindustry.entities.abilities.MoveLightningAbility",
+      "category": "ability"
+    },
+    "MultiBulletType": {
+      "fqcn": "mindustry.entities.bullet.MultiBulletType",
+      "category": "bullet"
+    },
+    "MultiEffect": {
+      "fqcn": "mindustry.entities.effect.MultiEffect",
+      "category": "effect"
+    },
+    "NeoplasmUnitType": {
+      "fqcn": "mindustry.type.unit.NeoplasmUnitType",
+      "category": "unit-template"
+    },
+    "NoiseEffect": {
+      "fqcn": "mindustry.entities.effect.NoiseEffect",
+      "category": "effect"
+    },
+    "NuclearReactor": {
+      "fqcn": "mindustry.world.blocks.power.NuclearReactor",
+      "category": "block-or-building"
+    },
+    "NuclearReactorBuild": {
+      "fqcn": "mindustry.world.blocks.power.NuclearReactor.NuclearReactorBuild",
+      "category": "block-or-building"
+    },
+    "Objective": {
+      "fqcn": "mindustry.game.Objectives.Objective",
+      "category": "objective"
+    },
+    "Objectives": {
+      "fqcn": "mindustry.game.Objectives",
+      "category": "objective"
+    },
+    "OnPlanet": {
+      "fqcn": "mindustry.game.Objectives.OnPlanet",
+      "category": "objective"
+    },
+    "OnSector": {
+      "fqcn": "mindustry.game.Objectives.OnSector",
+      "category": "objective"
+    },
+    "OreBlock": {
+      "fqcn": "mindustry.world.blocks.environment.OreBlock",
+      "category": "block-or-building"
+    },
+    "OverdriveBuild": {
+      "fqcn": "mindustry.world.blocks.defense.OverdriveProjector.OverdriveBuild",
+      "category": "block-or-building"
+    },
+    "OverdriveProjector": {
+      "fqcn": "mindustry.world.blocks.defense.OverdriveProjector",
+      "category": "block-or-building"
+    },
+    "OverflowDuct": {
+      "fqcn": "mindustry.world.blocks.distribution.OverflowDuct",
+      "category": "block-or-building"
+    },
+    "OverflowDuctBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.OverflowDuct.OverflowDuctBuild",
+      "category": "block-or-building"
+    },
+    "OverflowGate": {
+      "fqcn": "mindustry.world.blocks.distribution.OverflowGate",
+      "category": "block-or-building"
+    },
+    "OverflowGateBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.OverflowGate.OverflowGateBuild",
+      "category": "block-or-building"
+    },
+    "OverlayFloor": {
+      "fqcn": "mindustry.world.blocks.environment.OverlayFloor",
+      "category": "block-or-building"
+    },
+    "PartFunc": {
+      "fqcn": "mindustry.entities.part.DrawPart.PartFunc",
+      "category": "draw-part"
+    },
+    "PartMove": {
+      "fqcn": "mindustry.entities.part.DrawPart.PartMove",
+      "category": "draw-part"
+    },
+    "PartParams": {
+      "fqcn": "mindustry.entities.part.DrawPart.PartParams",
+      "category": "draw-part"
+    },
+    "PartProgress": {
+      "fqcn": "mindustry.entities.part.DrawPart.PartProgress",
+      "category": "draw-part"
+    },
+    "ParticleEffect": {
+      "fqcn": "mindustry.entities.effect.ParticleEffect",
+      "category": "effect"
+    },
+    "ParticleWeather": {
+      "fqcn": "mindustry.type.weather.ParticleWeather",
+      "category": "weather"
+    },
+    "Payload": {
+      "fqcn": "mindustry.world.blocks.payloads.Payload",
+      "category": "block-or-building"
+    },
+    "PayloadAmmoTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.PayloadAmmoTurret",
+      "category": "block-or-building"
+    },
+    "PayloadBlock": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadBlock",
+      "category": "block-or-building"
+    },
+    "PayloadBlockBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadBlock.PayloadBlockBuild",
+      "category": "block-or-building"
+    },
+    "PayloadConveyor": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadConveyor",
+      "category": "block-or-building"
+    },
+    "PayloadConveyorBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadConveyor.PayloadConveyorBuild",
+      "category": "block-or-building"
+    },
+    "PayloadDeconstructor": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadDeconstructor",
+      "category": "block-or-building"
+    },
+    "PayloadDeconstructorBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadDeconstructor.PayloadDeconstructorBuild",
+      "category": "block-or-building"
+    },
+    "PayloadDriverBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadMassDriver.PayloadDriverBuild",
+      "category": "block-or-building"
+    },
+    "PayloadDriverState": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadMassDriver.PayloadDriverState",
+      "category": "block-or-building"
+    },
+    "PayloadLoader": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadLoader",
+      "category": "block-or-building"
+    },
+    "PayloadLoaderBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadLoader.PayloadLoaderBuild",
+      "category": "block-or-building"
+    },
+    "PayloadMassDriver": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadMassDriver",
+      "category": "block-or-building"
+    },
+    "PayloadMassDriverData": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadMassDriver.PayloadMassDriverData",
+      "category": "block-or-building"
+    },
+    "PayloadRouter": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadRouter",
+      "category": "block-or-building"
+    },
+    "PayloadRouterBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadRouter.PayloadRouterBuild",
+      "category": "block-or-building"
+    },
+    "PayloadSeq": {
+      "fqcn": "mindustry.type.PayloadSeq",
+      "category": "value-or-content"
+    },
+    "PayloadSource": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadSource",
+      "category": "block-or-building"
+    },
+    "PayloadSourceBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadSource.PayloadSourceBuild",
+      "category": "block-or-building"
+    },
+    "PayloadStack": {
+      "fqcn": "mindustry.type.PayloadStack",
+      "category": "value-or-content"
+    },
+    "PayloadTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.PayloadAmmoTurret.PayloadTurretBuild",
+      "category": "block-or-building"
+    },
+    "PayloadUnloader": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadUnloader",
+      "category": "block-or-building"
+    },
+    "PayloadUnloaderBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadUnloader.PayloadUnloaderBuild",
+      "category": "block-or-building"
+    },
+    "PayloadVoid": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadVoid",
+      "category": "block-or-building"
+    },
+    "PayloadVoidBuild": {
+      "fqcn": "mindustry.world.blocks.payloads.PayloadVoid.PayloadVoidBuild",
+      "category": "block-or-building"
+    },
+    "Planet": {
+      "fqcn": "mindustry.type.Planet",
+      "category": "value-or-content"
+    },
+    "PlanetData": {
+      "fqcn": "mindustry.type.Planet.PlanetData",
+      "category": "value-or-content"
+    },
+    "PointBulletType": {
+      "fqcn": "mindustry.entities.bullet.PointBulletType",
+      "category": "bullet"
+    },
+    "PointDefenseBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.PointDefenseTurret.PointDefenseBuild",
+      "category": "block-or-building"
+    },
+    "PointDefenseBulletWeapon": {
+      "fqcn": "mindustry.type.weapons.PointDefenseBulletWeapon",
+      "category": "weapon"
+    },
+    "PointDefenseTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.PointDefenseTurret",
+      "category": "block-or-building"
+    },
+    "PointDefenseWeapon": {
+      "fqcn": "mindustry.type.weapons.PointDefenseWeapon",
+      "category": "weapon"
+    },
+    "PointLaserBulletType": {
+      "fqcn": "mindustry.entities.bullet.PointLaserBulletType",
+      "category": "bullet"
+    },
+    "PowerBlock": {
+      "fqcn": "mindustry.world.blocks.power.PowerBlock",
+      "category": "block-or-building"
+    },
+    "PowerDiode": {
+      "fqcn": "mindustry.world.blocks.power.PowerDiode",
+      "category": "block-or-building"
+    },
+    "PowerDiodeBuild": {
+      "fqcn": "mindustry.world.blocks.power.PowerDiode.PowerDiodeBuild",
+      "category": "block-or-building"
+    },
+    "PowerDistributor": {
+      "fqcn": "mindustry.world.blocks.power.PowerDistributor",
+      "category": "block-or-building"
+    },
+    "PowerGenerator": {
+      "fqcn": "mindustry.world.blocks.power.PowerGenerator",
+      "category": "block-or-building"
+    },
+    "PowerGraph": {
+      "fqcn": "mindustry.world.blocks.power.PowerGraph",
+      "category": "block-or-building"
+    },
+    "PowerNode": {
+      "fqcn": "mindustry.world.blocks.power.PowerNode",
+      "category": "block-or-building"
+    },
+    "PowerNodeBuild": {
+      "fqcn": "mindustry.world.blocks.power.PowerNode.PowerNodeBuild",
+      "category": "block-or-building"
+    },
+    "PowerSource": {
+      "fqcn": "mindustry.world.blocks.sandbox.PowerSource",
+      "category": "block-or-building"
+    },
+    "PowerSourceBuild": {
+      "fqcn": "mindustry.world.blocks.sandbox.PowerSource.PowerSourceBuild",
+      "category": "block-or-building"
+    },
+    "PowerTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.PowerTurret",
+      "category": "block-or-building"
+    },
+    "PowerTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.PowerTurret.PowerTurretBuild",
+      "category": "block-or-building"
+    },
+    "PowerVoid": {
+      "fqcn": "mindustry.world.blocks.sandbox.PowerVoid",
+      "category": "block-or-building"
+    },
+    "PrebuildAI": {
+      "fqcn": "mindustry.ai.types.PrebuildAI",
+      "category": "ai-controller"
+    },
+    "Produce": {
+      "fqcn": "mindustry.game.Objectives.Produce",
+      "category": "objective"
+    },
+    "Prop": {
+      "fqcn": "mindustry.world.blocks.environment.Prop",
+      "category": "block-or-building"
+    },
+    "Publishable": {
+      "fqcn": "mindustry.type.Publishable",
+      "category": "value-or-content"
+    },
+    "Pump": {
+      "fqcn": "mindustry.world.blocks.production.Pump",
+      "category": "block-or-building"
+    },
+    "PumpBuild": {
+      "fqcn": "mindustry.world.blocks.production.Pump.PumpBuild",
+      "category": "block-or-building"
+    },
+    "Radar": {
+      "fqcn": "mindustry.world.blocks.defense.Radar",
+      "category": "block-or-building"
+    },
+    "RadarBuild": {
+      "fqcn": "mindustry.world.blocks.defense.Radar.RadarBuild",
+      "category": "block-or-building"
+    },
+    "RadialEffect": {
+      "fqcn": "mindustry.entities.effect.RadialEffect",
+      "category": "effect"
+    },
+    "RailBulletType": {
+      "fqcn": "mindustry.entities.bullet.RailBulletType",
+      "category": "bullet"
+    },
+    "RainWeather": {
+      "fqcn": "mindustry.type.weather.RainWeather",
+      "category": "weather"
+    },
+    "Reconstructor": {
+      "fqcn": "mindustry.world.blocks.units.Reconstructor",
+      "category": "block-or-building"
+    },
+    "ReconstructorBuild": {
+      "fqcn": "mindustry.world.blocks.units.Reconstructor.ReconstructorBuild",
+      "category": "block-or-building"
+    },
+    "RegenAbility": {
+      "fqcn": "mindustry.entities.abilities.RegenAbility",
+      "category": "ability"
+    },
+    "RegenProjector": {
+      "fqcn": "mindustry.world.blocks.defense.RegenProjector",
+      "category": "block-or-building"
+    },
+    "RegenProjectorBuild": {
+      "fqcn": "mindustry.world.blocks.defense.RegenProjector.RegenProjectorBuild",
+      "category": "block-or-building"
+    },
+    "RegionPart": {
+      "fqcn": "mindustry.entities.part.RegionPart",
+      "category": "draw-part"
+    },
+    "ReloadTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ReloadTurret",
+      "category": "block-or-building"
+    },
+    "ReloadTurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.ReloadTurret.ReloadTurretBuild",
+      "category": "block-or-building"
+    },
+    "RemoveOre": {
+      "fqcn": "mindustry.world.blocks.environment.RemoveOre",
+      "category": "block-or-building"
+    },
+    "RemoveWall": {
+      "fqcn": "mindustry.world.blocks.environment.RemoveWall",
+      "category": "block-or-building"
+    },
+    "RepairAI": {
+      "fqcn": "mindustry.ai.types.RepairAI",
+      "category": "ai-controller"
+    },
+    "RepairBeamWeapon": {
+      "fqcn": "mindustry.type.weapons.RepairBeamWeapon",
+      "category": "weapon"
+    },
+    "RepairFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.RepairFieldAbility",
+      "category": "ability"
+    },
+    "RepairPointBuild": {
+      "fqcn": "mindustry.world.blocks.units.RepairTurret.RepairPointBuild",
+      "category": "block-or-building"
+    },
+    "RepairTower": {
+      "fqcn": "mindustry.world.blocks.units.RepairTower",
+      "category": "block-or-building"
+    },
+    "RepairTowerBuild": {
+      "fqcn": "mindustry.world.blocks.units.RepairTower.RepairTowerBuild",
+      "category": "block-or-building"
+    },
+    "RepairTurret": {
+      "fqcn": "mindustry.world.blocks.units.RepairTurret",
+      "category": "block-or-building"
+    },
+    "Research": {
+      "fqcn": "mindustry.game.Objectives.Research",
+      "category": "objective"
+    },
+    "RotBlock": {
+      "fqcn": "mindustry.world.blocks.RotBlock",
+      "category": "block-or-building"
+    },
+    "Router": {
+      "fqcn": "mindustry.world.blocks.distribution.Router",
+      "category": "block-or-building"
+    },
+    "RouterBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.Router.RouterBuild",
+      "category": "block-or-building"
+    },
+    "RuneOverlay": {
+      "fqcn": "mindustry.world.blocks.environment.RuneOverlay",
+      "category": "block-or-building"
+    },
+    "SapBulletType": {
+      "fqcn": "mindustry.entities.bullet.SapBulletType",
+      "category": "bullet"
+    },
+    "SeaBush": {
+      "fqcn": "mindustry.world.blocks.environment.SeaBush",
+      "category": "block-or-building"
+    },
+    "Seaweed": {
+      "fqcn": "mindustry.world.blocks.environment.Seaweed",
+      "category": "block-or-building"
+    },
+    "Sector": {
+      "fqcn": "mindustry.type.Sector",
+      "category": "value-or-content"
+    },
+    "SectorComplete": {
+      "fqcn": "mindustry.game.Objectives.SectorComplete",
+      "category": "objective"
+    },
+    "SectorDifficulty": {
+      "fqcn": "mindustry.type.SectorDifficulty",
+      "category": "value-or-content"
+    },
+    "SectorPreset": {
+      "fqcn": "mindustry.type.SectorPreset",
+      "category": "value-or-content"
+    },
+    "SectorRect": {
+      "fqcn": "mindustry.type.Sector.SectorRect",
+      "category": "value-or-content"
+    },
+    "Separator": {
+      "fqcn": "mindustry.world.blocks.production.Separator",
+      "category": "block-or-building"
+    },
+    "SeparatorBuild": {
+      "fqcn": "mindustry.world.blocks.production.Separator.SeparatorBuild",
+      "category": "block-or-building"
+    },
+    "SeqEffect": {
+      "fqcn": "mindustry.entities.effect.SeqEffect",
+      "category": "effect"
+    },
+    "ShallowLiquid": {
+      "fqcn": "mindustry.world.blocks.environment.ShallowLiquid",
+      "category": "block-or-building"
+    },
+    "ShapePart": {
+      "fqcn": "mindustry.entities.part.ShapePart",
+      "category": "draw-part"
+    },
+    "ShieldArcAbility": {
+      "fqcn": "mindustry.entities.abilities.ShieldArcAbility",
+      "category": "ability"
+    },
+    "ShieldRegenFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.ShieldRegenFieldAbility",
+      "category": "ability"
+    },
+    "ShieldWall": {
+      "fqcn": "mindustry.world.blocks.defense.ShieldWall",
+      "category": "block-or-building"
+    },
+    "ShieldWallBuild": {
+      "fqcn": "mindustry.world.blocks.defense.ShieldWall.ShieldWallBuild",
+      "category": "block-or-building"
+    },
+    "ShockMine": {
+      "fqcn": "mindustry.world.blocks.defense.ShockMine",
+      "category": "block-or-building"
+    },
+    "ShockMineBuild": {
+      "fqcn": "mindustry.world.blocks.defense.ShockMine.ShockMineBuild",
+      "category": "block-or-building"
+    },
+    "ShockwaveTower": {
+      "fqcn": "mindustry.world.blocks.defense.ShockwaveTower",
+      "category": "block-or-building"
+    },
+    "ShockwaveTowerBuild": {
+      "fqcn": "mindustry.world.blocks.defense.ShockwaveTower.ShockwaveTowerBuild",
+      "category": "block-or-building"
+    },
+    "ShootAlternate": {
+      "fqcn": "mindustry.entities.pattern.ShootAlternate",
+      "category": "shoot-pattern"
+    },
+    "ShootBarrel": {
+      "fqcn": "mindustry.entities.pattern.ShootBarrel",
+      "category": "shoot-pattern"
+    },
+    "ShootHelix": {
+      "fqcn": "mindustry.entities.pattern.ShootHelix",
+      "category": "shoot-pattern"
+    },
+    "ShootMulti": {
+      "fqcn": "mindustry.entities.pattern.ShootMulti",
+      "category": "shoot-pattern"
+    },
+    "ShootPattern": {
+      "fqcn": "mindustry.entities.pattern.ShootPattern",
+      "category": "shoot-pattern"
+    },
+    "ShootSine": {
+      "fqcn": "mindustry.entities.pattern.ShootSine",
+      "category": "shoot-pattern"
+    },
+    "ShootSpread": {
+      "fqcn": "mindustry.entities.pattern.ShootSpread",
+      "category": "shoot-pattern"
+    },
+    "ShootSummon": {
+      "fqcn": "mindustry.entities.pattern.ShootSummon",
+      "category": "shoot-pattern"
+    },
+    "ShrapnelBulletType": {
+      "fqcn": "mindustry.entities.bullet.ShrapnelBulletType",
+      "category": "bullet"
+    },
+    "SingleBlockProducer": {
+      "fqcn": "mindustry.world.blocks.production.SingleBlockProducer",
+      "category": "block-or-building"
+    },
+    "SingleBlockProducerBuild": {
+      "fqcn": "mindustry.world.blocks.production.SingleBlockProducer.SingleBlockProducerBuild",
+      "category": "block-or-building"
+    },
+    "SliceMode": {
+      "fqcn": "mindustry.world.blocks.Autotiler.SliceMode",
+      "category": "block-or-building"
+    },
+    "SolarFlare": {
+      "fqcn": "mindustry.type.weather.SolarFlare",
+      "category": "weather"
+    },
+    "SolarGenerator": {
+      "fqcn": "mindustry.world.blocks.power.SolarGenerator",
+      "category": "block-or-building"
+    },
+    "SolarGeneratorBuild": {
+      "fqcn": "mindustry.world.blocks.power.SolarGenerator.SolarGeneratorBuild",
+      "category": "block-or-building"
+    },
+    "SolidPump": {
+      "fqcn": "mindustry.world.blocks.production.SolidPump",
+      "category": "block-or-building"
+    },
+    "SolidPumpBuild": {
+      "fqcn": "mindustry.world.blocks.production.SolidPump.SolidPumpBuild",
+      "category": "block-or-building"
+    },
+    "Sorter": {
+      "fqcn": "mindustry.world.blocks.distribution.Sorter",
+      "category": "block-or-building"
+    },
+    "SorterBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.Sorter.SorterBuild",
+      "category": "block-or-building"
+    },
+    "SoundEffect": {
+      "fqcn": "mindustry.entities.effect.SoundEffect",
+      "category": "effect"
+    },
+    "SpaceLiquidBulletType": {
+      "fqcn": "mindustry.entities.bullet.SpaceLiquidBulletType",
+      "category": "bullet"
+    },
+    "SpawnBlock": {
+      "fqcn": "mindustry.world.blocks.environment.SpawnBlock",
+      "category": "block-or-building"
+    },
+    "SpawnDeathAbility": {
+      "fqcn": "mindustry.entities.abilities.SpawnDeathAbility",
+      "category": "ability"
+    },
+    "StackConveyor": {
+      "fqcn": "mindustry.world.blocks.distribution.StackConveyor",
+      "category": "block-or-building"
+    },
+    "StackConveyorBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.StackConveyor.StackConveyorBuild",
+      "category": "block-or-building"
+    },
+    "StackRouter": {
+      "fqcn": "mindustry.world.blocks.distribution.StackRouter",
+      "category": "block-or-building"
+    },
+    "StackRouterBuild": {
+      "fqcn": "mindustry.world.blocks.distribution.StackRouter.StackRouterBuild",
+      "category": "block-or-building"
+    },
+    "StaticProp": {
+      "fqcn": "mindustry.world.blocks.environment.StaticProp",
+      "category": "block-or-building"
+    },
+    "StaticTree": {
+      "fqcn": "mindustry.world.blocks.environment.StaticTree",
+      "category": "block-or-building"
+    },
+    "StaticWall": {
+      "fqcn": "mindustry.world.blocks.environment.StaticWall",
+      "category": "block-or-building"
+    },
+    "StatusEffect": {
+      "fqcn": "mindustry.type.StatusEffect",
+      "category": "value-or-content"
+    },
+    "StatusFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.StatusFieldAbility",
+      "category": "ability"
+    },
+    "SteamVent": {
+      "fqcn": "mindustry.world.blocks.environment.SteamVent",
+      "category": "block-or-building"
+    },
+    "StorageBlock": {
+      "fqcn": "mindustry.world.blocks.storage.StorageBlock",
+      "category": "block-or-building"
+    },
+    "StorageBuild": {
+      "fqcn": "mindustry.world.blocks.storage.StorageBlock.StorageBuild",
+      "category": "block-or-building"
+    },
+    "SuicideAI": {
+      "fqcn": "mindustry.ai.types.SuicideAI",
+      "category": "ai-controller"
+    },
+    "SuppressionFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.SuppressionFieldAbility",
+      "category": "ability"
+    },
+    "SwitchBlock": {
+      "fqcn": "mindustry.world.blocks.logic.SwitchBlock",
+      "category": "block-or-building"
+    },
+    "SwitchBuild": {
+      "fqcn": "mindustry.world.blocks.logic.SwitchBlock.SwitchBuild",
+      "category": "block-or-building"
+    },
+    "TallBlock": {
+      "fqcn": "mindustry.world.blocks.environment.TallBlock",
+      "category": "block-or-building"
+    },
+    "TankUnitType": {
+      "fqcn": "mindustry.type.unit.TankUnitType",
+      "category": "unit-template"
+    },
+    "TeamEntry": {
+      "fqcn": "mindustry.type.TeamEntry",
+      "category": "value-or-content"
+    },
+    "ThermalGenerator": {
+      "fqcn": "mindustry.world.blocks.power.ThermalGenerator",
+      "category": "block-or-building"
+    },
+    "ThermalGeneratorBuild": {
+      "fqcn": "mindustry.world.blocks.power.ThermalGenerator.ThermalGeneratorBuild",
+      "category": "block-or-building"
+    },
+    "Thruster": {
+      "fqcn": "mindustry.world.blocks.defense.Thruster",
+      "category": "block-or-building"
+    },
+    "ThrusterBuild": {
+      "fqcn": "mindustry.world.blocks.defense.Thruster.ThrusterBuild",
+      "category": "block-or-building"
+    },
+    "TileBitmask": {
+      "fqcn": "mindustry.world.blocks.TileBitmask",
+      "category": "block-or-building"
+    },
+    "TileableLogicDisplay": {
+      "fqcn": "mindustry.world.blocks.logic.TileableLogicDisplay",
+      "category": "block-or-building"
+    },
+    "TileableLogicDisplayBuild": {
+      "fqcn": "mindustry.world.blocks.logic.TileableLogicDisplay.TileableLogicDisplayBuild",
+      "category": "block-or-building"
+    },
+    "TiledFloor": {
+      "fqcn": "mindustry.world.blocks.environment.TiledFloor",
+      "category": "block-or-building"
+    },
+    "TiledWall": {
+      "fqcn": "mindustry.world.blocks.environment.TiledWall",
+      "category": "block-or-building"
+    },
+    "TractorBeamBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.TractorBeamTurret.TractorBeamBuild",
+      "category": "block-or-building"
+    },
+    "TractorBeamTurret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.TractorBeamTurret",
+      "category": "block-or-building"
+    },
+    "TransitionHandler": {
+      "fqcn": "mindustry.type.StatusEffect.TransitionHandler",
+      "category": "value-or-content"
+    },
+    "TreeBlock": {
+      "fqcn": "mindustry.world.blocks.environment.TreeBlock",
+      "category": "block-or-building"
+    },
+    "Turret": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.Turret",
+      "category": "block-or-building"
+    },
+    "TurretBuild": {
+      "fqcn": "mindustry.world.blocks.defense.turrets.Turret.TurretBuild",
+      "category": "block-or-building"
+    },
+    "UnitAssembler": {
+      "fqcn": "mindustry.world.blocks.units.UnitAssembler",
+      "category": "block-or-building"
+    },
+    "UnitAssemblerBuild": {
+      "fqcn": "mindustry.world.blocks.units.UnitAssembler.UnitAssemblerBuild",
+      "category": "block-or-building"
+    },
+    "UnitAssemblerModule": {
+      "fqcn": "mindustry.world.blocks.units.UnitAssemblerModule",
+      "category": "block-or-building"
+    },
+    "UnitAssemblerModuleBuild": {
+      "fqcn": "mindustry.world.blocks.units.UnitAssemblerModule.UnitAssemblerModuleBuild",
+      "category": "block-or-building"
+    },
+    "UnitBlock": {
+      "fqcn": "mindustry.world.blocks.units.UnitBlock",
+      "category": "block-or-building"
+    },
+    "UnitBuild": {
+      "fqcn": "mindustry.world.blocks.units.UnitBlock.UnitBuild",
+      "category": "block-or-building"
+    },
+    "UnitCargoLoader": {
+      "fqcn": "mindustry.world.blocks.units.UnitCargoLoader",
+      "category": "block-or-building"
+    },
+    "UnitCargoUnloadPoint": {
+      "fqcn": "mindustry.world.blocks.units.UnitCargoUnloadPoint",
+      "category": "block-or-building"
+    },
+    "UnitCargoUnloadPointBuild": {
+      "fqcn": "mindustry.world.blocks.units.UnitCargoUnloadPoint.UnitCargoUnloadPointBuild",
+      "category": "block-or-building"
+    },
+    "UnitEngine": {
+      "fqcn": "mindustry.type.UnitType.UnitEngine",
+      "category": "value-or-content"
+    },
+    "UnitFactory": {
+      "fqcn": "mindustry.world.blocks.units.UnitFactory",
+      "category": "block-or-building"
+    },
+    "UnitFactoryBuild": {
+      "fqcn": "mindustry.world.blocks.units.UnitFactory.UnitFactoryBuild",
+      "category": "block-or-building"
+    },
+    "UnitPayload": {
+      "fqcn": "mindustry.world.blocks.payloads.UnitPayload",
+      "category": "block-or-building"
+    },
+    "UnitPlan": {
+      "fqcn": "mindustry.world.blocks.units.UnitFactory.UnitPlan",
+      "category": "block-or-building"
+    },
+    "UnitSpawnAbility": {
+      "fqcn": "mindustry.entities.abilities.UnitSpawnAbility",
+      "category": "ability"
+    },
+    "UnitTetherBlock": {
+      "fqcn": "mindustry.world.blocks.UnitTetherBlock",
+      "category": "block-or-building"
+    },
+    "UnitTransportSourceBuild": {
+      "fqcn": "mindustry.world.blocks.units.UnitCargoLoader.UnitTransportSourceBuild",
+      "category": "block-or-building"
+    },
+    "UnitType": {
+      "fqcn": "mindustry.type.UnitType",
+      "category": "unit-template"
+    },
+    "Unloader": {
+      "fqcn": "mindustry.world.blocks.storage.Unloader",
+      "category": "block-or-building"
+    },
+    "UnloaderBuild": {
+      "fqcn": "mindustry.world.blocks.storage.Unloader.UnloaderBuild",
+      "category": "block-or-building"
+    },
+    "UpdateRenderState": {
+      "fqcn": "mindustry.world.blocks.environment.Floor.UpdateRenderState",
+      "category": "block-or-building"
+    },
+    "VariableReactor": {
+      "fqcn": "mindustry.world.blocks.power.VariableReactor",
+      "category": "block-or-building"
+    },
+    "VariableReactorBuild": {
+      "fqcn": "mindustry.world.blocks.power.VariableReactor.VariableReactorBuild",
+      "category": "block-or-building"
+    },
+    "Wall": {
+      "fqcn": "mindustry.world.blocks.defense.Wall",
+      "category": "block-or-building"
+    },
+    "WallBuild": {
+      "fqcn": "mindustry.world.blocks.defense.Wall.WallBuild",
+      "category": "block-or-building"
+    },
+    "WallCrafter": {
+      "fqcn": "mindustry.world.blocks.production.WallCrafter",
+      "category": "block-or-building"
+    },
+    "WallCrafterBuild": {
+      "fqcn": "mindustry.world.blocks.production.WallCrafter.WallCrafterBuild",
+      "category": "block-or-building"
+    },
+    "WaveEffect": {
+      "fqcn": "mindustry.entities.effect.WaveEffect",
+      "category": "effect"
+    },
+    "Weapon": {
+      "fqcn": "mindustry.type.Weapon",
+      "category": "weapon"
+    },
+    "Weather": {
+      "fqcn": "mindustry.type.Weather",
+      "category": "weather"
+    },
+    "WeatherEntry": {
+      "fqcn": "mindustry.type.Weather.WeatherEntry",
+      "category": "value-or-content"
+    },
+    "WobbleProp": {
+      "fqcn": "mindustry.world.blocks.environment.WobbleProp",
+      "category": "block-or-building"
+    },
+    "WrapEffect": {
+      "fqcn": "mindustry.entities.effect.WrapEffect",
+      "category": "effect"
+    },
+    "YeetData": {
+      "fqcn": "mindustry.world.blocks.units.UnitAssembler.YeetData",
+      "category": "block-or-building"
+    }
+  }
+}

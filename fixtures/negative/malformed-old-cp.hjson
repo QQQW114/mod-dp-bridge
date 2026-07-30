@@ -1,0 +1,6 @@
+name: bridge-fixture-malformed-cp
+block: {
+  copper-wall: {
+    health: [420
+  }
+}

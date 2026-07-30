@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "sourceDirectory": "<local-external-cp-corpus>",
+  "provenance": "Local MDT external-cp upload corpus",
+  "license": "unknown-reference-only",
+  "redistributed": false,
+  "samples": [
+    {
+      "name": "惊鸿3.zip",
+      "size": 66790,
+      "sha256": "175c1daa88c319936f651a84e362559b580b13604057081a469360157d5b0fcc",
+      "kind": "data-assets-zip",
+      "notes": "17 entries: 1 block JSON, 14 PNG, 2 OGG"
+    },
+    {
+      "name": "亚龙组合包 (1).zip",
+      "size": 456748,
+      "sha256": "3b5981ba7e6986d3253e1ac25c1795ae6b0bd90fd8bf73cd4d60166baba65256",
+      "kind": "data-assets-zip",
+      "notes": "76 entries: 17 JSON, 58 PNG, 1 OGG; includes a known missing-region case"
+    },
+    {
+      "name": "区块生存CP.hjson",
+      "size": 7353250,
+      "sha256": "87b3556cc2e8a3aca3a8211a3eded173ee879a28c5ed03559d6bb1108d629dcc",
+      "kind": "legacy-cp-hjson",
+      "notes": "Large HJSON PatchSet and parser/resource-limit fixture"
+    },
+    {
+      "name": "奇妙双科cp.json",
+      "size": 743260,
+      "sha256": "ecad25eae6c6b877611bc6887f80e643e0e4d2912b6652ba609e286749491bba",
+      "kind": "legacy-cp-json",
+      "notes": "Strict JSON PatchSet"
+    },
+    {
+      "name": "仙古2.8cp单文件整合.json",
+      "size": 796436,
+      "sha256": "0d540bbc01d01a82091a55147a3943eb47cefa6ad566d5f8794c86b683e7946e",
+      "kind": "legacy-cp-json-with-comments",
+      "notes": "JSON extension but contains comments; requires tolerant HJSON/Jval parsing"
+    },
+    {
+      "name": "生锈的铜的cp预览版.json",
+      "size": 11037,
+      "sha256": "fc74e959ab3204c84b6cff5c252041f203c909174e48405ef63e86c370ee2558",
+      "kind": "legacy-cp-json",
+      "notes": "Small strict JSON PatchSet with blocks and a liquid"
+    },
+    {
+      "name": "锈铜墙.json",
+      "size": 581,
+      "sha256": "8e89c620858ec91ee9fa307b9513ae0f45eee3cf89a4e7f96a9ea5f7beedf19d",
+      "kind": "legacy-cp-json",
+      "notes": "Smallest strict JSON patch sample"
+    }
+  ]
+}

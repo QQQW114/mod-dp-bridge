@@ -1,0 +1,10 @@
+{
+  type: Wall
+  health: 320
+  armor: 2
+  size: 1
+  requirements: [
+    "bridge-fixture-minimal-fixture-alloy/4"
+  ]
+  category: defense
+}

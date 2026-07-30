@@ -1,0 +1,7 @@
+name: bridge-fixture-missing-resource
+displayName: "Bridge Fixture: Missing Resources"
+author: "mod-dp-bridge contributors"
+description: "Negative fixture with intentionally absent sprite and sound assets."
+version: 1.0
+minGameVersion: 146
+hidden: true

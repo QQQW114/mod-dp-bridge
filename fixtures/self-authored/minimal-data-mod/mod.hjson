@@ -1,0 +1,7 @@
+name: bridge-fixture-minimal
+displayName: "Bridge Fixture: Minimal Data Mod"
+author: "mod-dp-bridge contributors"
+description: "Self-authored deterministic fixture containing one item, one block, and one unit."
+version: 1.0
+minGameVersion: 146
+hidden: true

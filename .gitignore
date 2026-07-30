@@ -1,0 +1,30 @@
+.gradle/
+.kotlin/
+build/
+**/build/
+.idea/
+*.iml
+out/
+work/
+*.log
+*.tmp
+.bridge-cache/
+model-test-info.txt
+.DS_Store
+Thumbs.db
+
+# Mindustry creates these runtime files when a validation server is launched
+# from the repository. Only the two versioned mapping files in config/ belong
+# to the source tree.
+/config/assets/
+/config/logs/
+/config/maps/
+/config/mods/
+/config/settings.bin
+/config/settings_backup.bin
+/config/settings_backups/
+/config/rules.hjson
+
+# Local third-party Mod/reference corpus. These files are used only for
+# opt-in regression testing and must not be published from this repository.
+/资源参考/

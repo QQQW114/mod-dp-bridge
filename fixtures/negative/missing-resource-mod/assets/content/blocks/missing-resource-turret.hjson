@@ -1,0 +1,17 @@
+{
+  type: PowerTurret
+  health: 100
+  size: 1
+  range: 80
+  reload: 60
+  requirements: ["copper/1"]
+  category: turret
+  shootSound: "bridge-fixture-missing-resource-missing-shot"
+  shootType: {
+    type: BasicBulletType
+    sprite: "bridge-fixture-missing-resource-missing-bullet"
+    speed: 2
+    damage: 1
+    lifetime: 40
+  }
+}

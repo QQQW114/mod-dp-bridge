@@ -1,0 +1,16 @@
+diff --git a/core/src/mindustry/mod/DataImagePacker.java b/core/src/mindustry/mod/DataImagePacker.java
+--- a/core/src/mindustry/mod/DataImagePacker.java
++++ b/core/src/mindustry/mod/DataImagePacker.java
+@@ -171,11 +171,11 @@ public class DataImagePacker{
+     public void unload(){
+         if(patchAtlas != null){
+             for(var texture : patchAtlas.getTextures()){
+-                patchAtlas.getTextures().remove(texture);
++                Core.atlas.getTextures().remove(texture);
+             }
+             for(var region : patchAtlas.getRegions()){
+-                patchAtlas.getRegionMap().remove(region.name);
++                Core.atlas.getRegionMap().remove(region.name);
+             }
+
+             patchAtlas.dispose();

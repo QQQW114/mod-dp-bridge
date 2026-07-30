@@ -1,0 +1,27 @@
+# Self-authored old CP/HJSON fixture.
+name: bridge-fixture-old-cp
+
+item: {
+  copper: {
+    cost: 1.1
+    flammability: 0.05
+  }
+}
+
+block: {
+  copper-wall: {
+    localizedName: "Fixture Patched Copper Wall"
+    health: 420
+    insulated: "true"
+    "requirements.+": [
+      { item: plastanium, amount: 2 }
+    ]
+  }
+}
+
+unit: {
+  dagger: {
+    speed: 0.55
+    armor: 1
+  }
+}

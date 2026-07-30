@@ -1,0 +1,2370 @@
+{
+  "schemaVersion": 1,
+  "target": {
+    "mindustryVersion": "v159.7",
+    "buildLine": "B480",
+    "dataPatchFormatVersion": 2,
+    "classMapFile": "config/mindustry-v1597-classmap.json"
+  },
+  "sourceOfTruth": {
+    "contentParser": "core/src/mindustry/mod/ContentParser.java",
+    "dataPatcher": "core/src/mindustry/mod/DataPatcher.java",
+    "classMap": "core/src/mindustry/mod/ClassMap.java"
+  },
+  "runtimeBoundary": {
+    "allowedRootContentKinds": [
+      "item",
+      "block",
+      "liquid",
+      "status",
+      "unit",
+      "weather"
+    ],
+    "excludedByProductPolicy": [
+      "planet",
+      "sector",
+      "tech-tree",
+      "map-generation",
+      "GUI",
+      "network"
+    ],
+    "allowClassResolution": false,
+    "rule": "A target type must resolve by effective ClassMap short name and be assignable in the parser context. FQCN/custom classes are never emitted.",
+    "unknownFields": "ContentParser warns and ignores them; converter must pre-report every dropped/unknown field instead of treating load success as full success."
+  },
+  "namespacePolicy": {
+    "recommendedStaticOutputNamespace": "SOURCE",
+    "reason": "Existing ModNamespaceRewriter must turn content/asset refs into dp-* while stripping the source prefix from nested member names. Weapon parser itself prefixes dp-, so TARGET name values can become dp-dp-*.",
+    "rootAssetBasename": "local Java content name without source mod namespace",
+    "contentReference": "emit source-qualified or local source name; rewriter emits dp-local",
+    "nestedMappableName": "emit original Java value; rewriter strips exactly one sourceMod- prefix and ContentParser adds dp-",
+    "mapCompatibility": "source maps storing sourceMod-local content names require a separate sourceMod-local -> dp-local rewrite/migration table."
+  },
+  "rootResolution": {
+    "exactTypes": {
+      "Item": {
+        "fqcn": "mindustry.type.Item",
+        "rootKind": "item",
+        "outputDir": "content/items",
+        "targetType": null,
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          },
+          {
+            "params": [
+              "name",
+              "color"
+            ],
+            "fields": [
+              null,
+              "color"
+            ]
+          }
+        ]
+      },
+      "Liquid": {
+        "fqcn": "mindustry.type.Liquid",
+        "rootKind": "liquid",
+        "outputDir": "content/liquids",
+        "targetType": null,
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          },
+          {
+            "params": [
+              "name",
+              "color"
+            ],
+            "fields": [
+              null,
+              "color"
+            ]
+          }
+        ]
+      },
+      "CellLiquid": {
+        "fqcn": "mindustry.type.CellLiquid",
+        "rootKind": "liquid",
+        "outputDir": "content/liquids",
+        "targetType": "CellLiquid",
+        "rootSelector": "type",
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          },
+          {
+            "params": [
+              "name",
+              "color"
+            ],
+            "fields": [
+              null,
+              "color"
+            ]
+          }
+        ]
+      },
+      "StatusEffect": {
+        "fqcn": "mindustry.type.StatusEffect",
+        "rootKind": "status",
+        "outputDir": "content/statuses",
+        "targetType": null,
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          }
+        ]
+      },
+      "UnitType": {
+        "fqcn": "mindustry.type.UnitType",
+        "rootKind": "unit",
+        "outputDir": "content/units",
+        "targetType": null,
+        "rootSelector": "template",
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          }
+        ]
+      },
+      "TankUnitType": {
+        "fqcn": "mindustry.type.unit.TankUnitType",
+        "rootKind": "unit",
+        "outputDir": "content/units",
+        "targetType": "TankUnitType",
+        "rootSelector": "template",
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          }
+        ]
+      },
+      "MissileUnitType": {
+        "fqcn": "mindustry.type.unit.MissileUnitType",
+        "rootKind": "unit",
+        "outputDir": "content/units",
+        "targetType": "MissileUnitType",
+        "rootSelector": "template",
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          }
+        ]
+      },
+      "ErekirUnitType": {
+        "fqcn": "mindustry.type.unit.ErekirUnitType",
+        "rootKind": "unit",
+        "outputDir": "content/units",
+        "targetType": "ErekirUnitType",
+        "rootSelector": "template",
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          }
+        ]
+      },
+      "NeoplasmUnitType": {
+        "fqcn": "mindustry.type.unit.NeoplasmUnitType",
+        "rootKind": "unit",
+        "outputDir": "content/units",
+        "targetType": "NeoplasmUnitType",
+        "rootSelector": "template",
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          }
+        ]
+      },
+      "Weather": {
+        "fqcn": "mindustry.type.Weather",
+        "rootKind": "weather",
+        "outputDir": "content/weathers",
+        "targetType": "Weather",
+        "rootSelector": "type",
+        "nameRule": "arg[0]",
+        "policy": "supported-by-DP-but-not-a-priority"
+      },
+      "Floor": {
+        "fqcn": "mindustry.world.blocks.environment.Floor",
+        "rootKind": "block",
+        "outputDir": "content/blocks",
+        "targetType": "Floor",
+        "rootSelector": "type",
+        "nameRule": "arg[0]",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ]
+          },
+          {
+            "params": [
+              "name",
+              "variants"
+            ],
+            "fields": [
+              null,
+              "variants"
+            ]
+          }
+        ]
+      },
+      "OreBlock": {
+        "fqcn": "mindustry.world.blocks.environment.OreBlock",
+        "rootKind": "block",
+        "outputDir": "content/blocks",
+        "targetType": "OreBlock",
+        "rootSelector": "type",
+        "constructors": [
+          {
+            "params": [
+              "name"
+            ],
+            "nameRule": "arg[0]"
+          },
+          {
+            "params": [
+              "name",
+              "ore"
+            ],
+            "fields": [
+              null,
+              "itemDrop"
+            ],
+            "nameRule": "arg[0]",
+            "derivedFields": {
+              "localizedName": "copy ore localized bundle when statically known",
+              "mapColor": "copy ore color when statically known",
+              "useColor": true,
+              "variants": 3
+            }
+          },
+          {
+            "params": [
+              "ore"
+            ],
+            "fields": [
+              "itemDrop"
+            ],
+            "nameRule": "\"ore-\" + contentLocalName(arg[0])",
+            "derivedFields": {
+              "localizedName": "copy ore localized bundle when statically known",
+              "mapColor": "copy ore color when statically known",
+              "useColor": true,
+              "variants": 3
+            }
+          }
+        ]
+      }
+    },
+    "blockFamilyRule": {
+      "match": "constructed type is ClassMap-resolvable, assignable to mindustry.world.Block, and exposes a String constructor",
+      "rootKind": "block",
+      "outputDir": "content/blocks",
+      "rootSelector": "type",
+      "targetType": "ClassMap short name",
+      "nameRule": "String constructor argument; additional constructor arguments must be lowered to fields"
+    },
+    "customSubclassRule": "use explicitDegradations first; otherwise walk source superclass chain to nearest ClassMap type with the required parser constructor; if no safe parent exists, do not emit content."
+  },
+  "constructorMappings": {
+    "ItemStack": {
+      "fqcn": "mindustry.type.ItemStack",
+      "emit": "object-or-item/amount-shorthand",
+      "signatures": [
+        {
+          "params": [
+            "item",
+            "amount"
+          ],
+          "fields": [
+            "item",
+            "amount"
+          ]
+        }
+      ]
+    },
+    "LiquidStack": {
+      "fqcn": "mindustry.type.LiquidStack",
+      "emit": "object-or-liquid/amount-shorthand",
+      "signatures": [
+        {
+          "params": [
+            "liquid",
+            "amount"
+          ],
+          "fields": [
+            "liquid",
+            "amount"
+          ]
+        }
+      ]
+    },
+    "PayloadStack": {
+      "fqcn": "mindustry.type.PayloadStack",
+      "emit": "object-or-payload/amount-shorthand",
+      "signatures": [
+        {
+          "params": [
+            "item",
+            "amount"
+          ],
+          "fields": [
+            "item",
+            "amount"
+          ]
+        }
+      ]
+    },
+    "Weapon": {
+      "fqcn": "mindustry.type.Weapon",
+      "emit": "object",
+      "typeField": "type",
+      "omitTypeWhen": "Weapon",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "name"
+          ],
+          "fields": [
+            "name"
+          ]
+        }
+      ],
+      "nameNamespace": "source-member-name; existing rewriter strips source mod prefix before ContentParser adds dp-"
+    },
+    "PointDefenseWeapon": {
+      "fqcn": "mindustry.type.weapons.PointDefenseWeapon",
+      "emit": "object",
+      "typeField": "type",
+      "typeValue": "PointDefenseWeapon",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "name"
+          ],
+          "fields": [
+            "name"
+          ]
+        }
+      ]
+    },
+    "RepairBeamWeapon": {
+      "fqcn": "mindustry.type.weapons.RepairBeamWeapon",
+      "emit": "object",
+      "typeField": "type",
+      "typeValue": "RepairBeamWeapon",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "name"
+          ],
+          "fields": [
+            "name"
+          ]
+        }
+      ]
+    },
+    "UnitEngine": {
+      "fqcn": "mindustry.type.UnitType.UnitEngine",
+      "emit": "object",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "x",
+            "y",
+            "radius",
+            "rotation"
+          ],
+          "fields": [
+            "x",
+            "y",
+            "radius",
+            "rotation"
+          ]
+        }
+      ]
+    },
+    "UnitPlan": {
+      "fqcn": "mindustry.world.blocks.units.UnitFactory.UnitPlan",
+      "emit": "object",
+      "signatures": [
+        {
+          "params": [
+            "unit",
+            "time",
+            "requirements"
+          ],
+          "fields": [
+            "unit",
+            "time",
+            "requirements"
+          ]
+        }
+      ]
+    },
+    "AssemblerUnitPlan": {
+      "fqcn": "mindustry.world.blocks.units.UnitAssembler.AssemblerUnitPlan",
+      "emit": "object",
+      "signatures": [
+        {
+          "params": [
+            "unit",
+            "time",
+            "requirements"
+          ],
+          "fields": [
+            "unit",
+            "time",
+            "requirements"
+          ]
+        }
+      ]
+    },
+    "BulletType": {
+      "fqcn": "mindustry.entities.bullet.BulletType",
+      "emit": "bullet-object",
+      "typeValue": "BulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "speed",
+            "damage"
+          ],
+          "fields": [
+            "speed",
+            "damage"
+          ]
+        }
+      ]
+    },
+    "BasicBulletType": {
+      "fqcn": "mindustry.entities.bullet.BasicBulletType",
+      "emit": "bullet-object",
+      "typeValue": "BasicBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "speed",
+            "damage"
+          ],
+          "fields": [
+            "speed",
+            "damage"
+          ]
+        },
+        {
+          "params": [
+            "speed",
+            "damage",
+            "bulletSprite"
+          ],
+          "fields": [
+            "speed",
+            "damage",
+            "sprite"
+          ]
+        }
+      ]
+    },
+    "ArtilleryBulletType": {
+      "fqcn": "mindustry.entities.bullet.ArtilleryBulletType",
+      "emit": "bullet-object",
+      "typeValue": "ArtilleryBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "speed",
+            "damage"
+          ],
+          "fields": [
+            "speed",
+            "damage"
+          ]
+        },
+        {
+          "params": [
+            "speed",
+            "damage",
+            "bulletSprite"
+          ],
+          "fields": [
+            "speed",
+            "damage",
+            "sprite"
+          ]
+        }
+      ]
+    },
+    "MissileBulletType": {
+      "fqcn": "mindustry.entities.bullet.MissileBulletType",
+      "emit": "bullet-object",
+      "typeValue": "MissileBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "speed",
+            "damage"
+          ],
+          "fields": [
+            "speed",
+            "damage"
+          ]
+        },
+        {
+          "params": [
+            "speed",
+            "damage",
+            "bulletSprite"
+          ],
+          "fields": [
+            "speed",
+            "damage",
+            "sprite"
+          ]
+        }
+      ]
+    },
+    "FlakBulletType": {
+      "fqcn": "mindustry.entities.bullet.FlakBulletType",
+      "emit": "bullet-object",
+      "typeValue": "FlakBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "speed",
+            "damage"
+          ],
+          "fields": [
+            "speed",
+            "damage"
+          ]
+        }
+      ]
+    },
+    "FireBulletType": {
+      "fqcn": "mindustry.entities.bullet.FireBulletType",
+      "emit": "bullet-object",
+      "typeValue": "FireBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "speed",
+            "damage"
+          ],
+          "fields": [
+            "speed",
+            "damage"
+          ]
+        }
+      ]
+    },
+    "LiquidBulletType": {
+      "fqcn": "mindustry.entities.bullet.LiquidBulletType",
+      "emit": "bullet-object",
+      "typeValue": "LiquidBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "liquid"
+          ],
+          "fields": [
+            "liquid"
+          ]
+        }
+      ]
+    },
+    "LaserBulletType": {
+      "fqcn": "mindustry.entities.bullet.LaserBulletType",
+      "emit": "bullet-object",
+      "typeValue": "LaserBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "damage"
+          ],
+          "fields": [
+            "damage"
+          ]
+        }
+      ]
+    },
+    "ExplosionBulletType": {
+      "fqcn": "mindustry.entities.bullet.ExplosionBulletType",
+      "emit": "bullet-object",
+      "typeValue": "ExplosionBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "splashDamage",
+            "splashDamageRadius"
+          ],
+          "fields": [
+            "splashDamage",
+            "splashDamageRadius"
+          ]
+        }
+      ]
+    },
+    "ContinuousFlameBulletType": {
+      "fqcn": "mindustry.entities.bullet.ContinuousFlameBulletType",
+      "emit": "bullet-object",
+      "typeValue": "ContinuousFlameBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "damage"
+          ],
+          "fields": [
+            "damage"
+          ]
+        }
+      ]
+    },
+    "ContinuousLaserBulletType": {
+      "fqcn": "mindustry.entities.bullet.ContinuousLaserBulletType",
+      "emit": "bullet-object",
+      "typeValue": "ContinuousLaserBulletType",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "damage"
+          ],
+          "fields": [
+            "damage"
+          ]
+        }
+      ]
+    },
+    "MultiEffect": {
+      "fqcn": "mindustry.entities.effect.MultiEffect",
+      "emit": "effect-array-shorthand",
+      "signatures": [
+        {
+          "params": [
+            "effects..."
+          ],
+          "fields": [
+            "effects"
+          ]
+        }
+      ]
+    },
+    "WrapEffect": {
+      "fqcn": "mindustry.entities.effect.WrapEffect",
+      "emit": "effect-object",
+      "typeValue": "WrapEffect",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "effect",
+            "color"
+          ],
+          "fields": [
+            "effect",
+            "color"
+          ]
+        },
+        {
+          "params": [
+            "effect",
+            "color",
+            "rotation"
+          ],
+          "fields": [
+            "effect",
+            "color",
+            "rotation"
+          ]
+        }
+      ]
+    },
+    "ParticleEffect": {
+      "fqcn": "mindustry.entities.effect.ParticleEffect",
+      "emit": "effect-object",
+      "typeValue": "ParticleEffect",
+      "signatures": [
+        {
+          "params": []
+        }
+      ]
+    },
+    "WaveEffect": {
+      "fqcn": "mindustry.entities.effect.WaveEffect",
+      "emit": "effect-object",
+      "typeValue": "WaveEffect",
+      "signatures": [
+        {
+          "params": []
+        }
+      ]
+    },
+    "ExplosionEffect": {
+      "fqcn": "mindustry.entities.effect.ExplosionEffect",
+      "emit": "effect-object",
+      "typeValue": "ExplosionEffect",
+      "signatures": [
+        {
+          "params": []
+        }
+      ]
+    },
+    "RadialEffect": {
+      "fqcn": "mindustry.entities.effect.RadialEffect",
+      "emit": "effect-object",
+      "typeValue": "RadialEffect",
+      "signatures": [
+        {
+          "params": []
+        }
+      ]
+    },
+    "RegionPart": {
+      "fqcn": "mindustry.entities.part.RegionPart",
+      "emit": "part-object",
+      "typeValue": "RegionPart",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "region"
+          ],
+          "fields": [
+            "suffix"
+          ]
+        },
+        {
+          "params": [
+            "region",
+            "blending",
+            "color"
+          ],
+          "fields": [
+            "suffix",
+            "blending",
+            "color"
+          ],
+          "injectedFields": {
+            "outline": false
+          }
+        }
+      ]
+    },
+    "PartMove": {
+      "fqcn": "mindustry.entities.part.DrawPart.PartMove",
+      "emit": "object",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "progress",
+            "x",
+            "y",
+            "rot"
+          ],
+          "fields": [
+            "progress",
+            "x",
+            "y",
+            "rot"
+          ],
+          "injectedFields": {
+            "gx": 0,
+            "gy": 0
+          }
+        },
+        {
+          "params": [
+            "progress",
+            "x",
+            "y",
+            "gx",
+            "gy",
+            "rot"
+          ],
+          "fields": [
+            "progress",
+            "x",
+            "y",
+            "gx",
+            "gy",
+            "rot"
+          ]
+        }
+      ]
+    },
+    "ShootAlternate": {
+      "fqcn": "mindustry.entities.pattern.ShootAlternate",
+      "emit": "shoot-object",
+      "typeValue": "ShootAlternate",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "spread"
+          ],
+          "fields": [
+            "spread"
+          ]
+        }
+      ]
+    },
+    "ShootSpread": {
+      "fqcn": "mindustry.entities.pattern.ShootSpread",
+      "emit": "shoot-object",
+      "typeValue": "ShootSpread",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "shots",
+            "spread"
+          ],
+          "fields": [
+            "shots",
+            "spread"
+          ]
+        }
+      ]
+    },
+    "ShootHelix": {
+      "fqcn": "mindustry.entities.pattern.ShootHelix",
+      "emit": "shoot-object",
+      "typeValue": "ShootHelix",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "scl",
+            "mag"
+          ],
+          "fields": [
+            "scl",
+            "mag"
+          ]
+        },
+        {
+          "params": [
+            "scl",
+            "mag",
+            "offset"
+          ],
+          "fields": [
+            "scl",
+            "mag",
+            "offset"
+          ]
+        }
+      ]
+    },
+    "ShootMulti": {
+      "fqcn": "mindustry.entities.pattern.ShootMulti",
+      "emit": "shoot-object",
+      "typeValue": "ShootMulti",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "source",
+            "dest..."
+          ],
+          "fields": [
+            "source",
+            "dest"
+          ]
+        }
+      ]
+    },
+    "DrawMulti": {
+      "fqcn": "mindustry.world.draw.DrawMulti",
+      "emit": "draw-array-shorthand",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "drawers..."
+          ],
+          "fields": [
+            "drawers"
+          ]
+        }
+      ]
+    },
+    "DrawRegion": {
+      "fqcn": "mindustry.world.draw.DrawRegion",
+      "emit": "draw-object",
+      "typeValue": "DrawRegion",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "suffix"
+          ],
+          "fields": [
+            "suffix"
+          ]
+        },
+        {
+          "params": [
+            "suffix",
+            "rotateSpeed"
+          ],
+          "fields": [
+            "suffix",
+            "rotateSpeed"
+          ]
+        },
+        {
+          "params": [
+            "suffix",
+            "rotateSpeed",
+            "spinSprite"
+          ],
+          "fields": [
+            "suffix",
+            "rotateSpeed",
+            "spinSprite"
+          ]
+        }
+      ]
+    },
+    "DrawLiquidTile": {
+      "fqcn": "mindustry.world.draw.DrawLiquidTile",
+      "emit": "draw-object",
+      "typeValue": "DrawLiquidTile",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "drawLiquid"
+          ],
+          "fields": [
+            "drawLiquid"
+          ]
+        },
+        {
+          "params": [
+            "drawLiquid",
+            "padding"
+          ],
+          "fields": [
+            "drawLiquid",
+            "padding"
+          ]
+        }
+      ]
+    },
+    "DrawLiquidRegion": {
+      "fqcn": "mindustry.world.draw.DrawLiquidRegion",
+      "emit": "draw-object",
+      "typeValue": "DrawLiquidRegion",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "drawLiquid"
+          ],
+          "fields": [
+            "drawLiquid"
+          ]
+        }
+      ]
+    },
+    "DrawFlame": {
+      "fqcn": "mindustry.world.draw.DrawFlame",
+      "emit": "draw-object",
+      "typeValue": "DrawFlame",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "flameColor"
+          ],
+          "fields": [
+            "flameColor"
+          ]
+        }
+      ]
+    },
+    "DrawTurret": {
+      "fqcn": "mindustry.world.draw.DrawTurret",
+      "emit": "draw-object",
+      "typeValue": "DrawTurret",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "basePrefix"
+          ],
+          "fields": [
+            "basePrefix"
+          ]
+        }
+      ]
+    },
+    "MoveEffectAbility": {
+      "fqcn": "mindustry.entities.abilities.MoveEffectAbility",
+      "emit": "ability-object",
+      "typeValue": "MoveEffectAbility",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "x",
+            "y",
+            "color",
+            "effect",
+            "interval"
+          ],
+          "fields": [
+            "x",
+            "y",
+            "color",
+            "effect",
+            "interval"
+          ],
+          "injectedFields": {
+            "display": false
+          }
+        }
+      ]
+    },
+    "StatusFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.StatusFieldAbility",
+      "emit": "ability-object",
+      "typeValue": "StatusFieldAbility",
+      "signatures": [
+        {
+          "params": [
+            "effect",
+            "duration",
+            "reload",
+            "range"
+          ],
+          "fields": [
+            "effect",
+            "duration",
+            "reload",
+            "range"
+          ]
+        }
+      ]
+    },
+    "ShieldRegenFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.ShieldRegenFieldAbility",
+      "emit": "ability-object",
+      "typeValue": "ShieldRegenFieldAbility",
+      "signatures": [
+        {
+          "params": [
+            "amount",
+            "max",
+            "reload",
+            "range"
+          ],
+          "fields": [
+            "amount",
+            "max",
+            "reload",
+            "range"
+          ]
+        }
+      ]
+    },
+    "ForceFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.ForceFieldAbility",
+      "emit": "ability-object",
+      "typeValue": "ForceFieldAbility",
+      "signatures": [
+        {
+          "params": [
+            "radius",
+            "regen",
+            "max",
+            "cooldown"
+          ],
+          "fields": [
+            "radius",
+            "regen",
+            "max",
+            "cooldown"
+          ]
+        },
+        {
+          "params": [
+            "radius",
+            "regen",
+            "max",
+            "cooldown",
+            "sides",
+            "rotation"
+          ],
+          "fields": [
+            "radius",
+            "regen",
+            "max",
+            "cooldown",
+            "sides",
+            "rotation"
+          ]
+        }
+      ]
+    },
+    "EnergyFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.EnergyFieldAbility",
+      "emit": "ability-object",
+      "typeValue": "EnergyFieldAbility",
+      "signatures": [
+        {
+          "params": [
+            "damage",
+            "reload",
+            "range"
+          ],
+          "fields": [
+            "damage",
+            "reload",
+            "range"
+          ]
+        }
+      ]
+    },
+    "RepairFieldAbility": {
+      "fqcn": "mindustry.entities.abilities.RepairFieldAbility",
+      "emit": "ability-object",
+      "typeValue": "RepairFieldAbility",
+      "signatures": [
+        {
+          "params": [
+            "amount",
+            "reload",
+            "range"
+          ],
+          "fields": [
+            "amount",
+            "reload",
+            "range"
+          ]
+        },
+        {
+          "params": [
+            "amount",
+            "reload",
+            "range",
+            "healPercent"
+          ],
+          "fields": [
+            "amount",
+            "reload",
+            "range",
+            "healPercent"
+          ]
+        }
+      ]
+    },
+    "UnitSpawnAbility": {
+      "fqcn": "mindustry.entities.abilities.UnitSpawnAbility",
+      "emit": "ability-object",
+      "typeValue": "UnitSpawnAbility",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "unit",
+            "spawnTime",
+            "spawnX",
+            "spawnY"
+          ],
+          "fields": [
+            "unit",
+            "spawnTime",
+            "spawnX",
+            "spawnY"
+          ]
+        }
+      ]
+    },
+    "SpawnDeathAbility": {
+      "fqcn": "mindustry.entities.abilities.SpawnDeathAbility",
+      "emit": "ability-object",
+      "typeValue": "SpawnDeathAbility",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "unit",
+            "amount",
+            "spread"
+          ],
+          "fields": [
+            "unit",
+            "amount",
+            "spread"
+          ]
+        }
+      ]
+    },
+    "Rect": {
+      "fqcn": "arc.math.geom.Rect",
+      "emit": "array",
+      "signatures": [
+        {
+          "params": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "fields": [
+            0,
+            1,
+            2,
+            3
+          ]
+        }
+      ]
+    },
+    "Vec2": {
+      "fqcn": "arc.math.geom.Vec2",
+      "emit": "object",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "x",
+            "y"
+          ],
+          "fields": [
+            "x",
+            "y"
+          ]
+        }
+      ]
+    },
+    "Color": {
+      "fqcn": "arc.graphics.Color",
+      "emit": "normalized RGBA hex string",
+      "signatures": [
+        {
+          "params": [],
+          "result": "00000000"
+        },
+        {
+          "params": [
+            "otherColor"
+          ],
+          "result": "copy normalized color"
+        },
+        {
+          "params": [
+            "r",
+            "g",
+            "b",
+            "a"
+          ],
+          "result": "clamp channels to [0,1], multiply by 255 using target truncation/packing semantics, emit rrggbbaa"
+        }
+      ]
+    },
+    "ConsumePower": {
+      "fqcn": "mindustry.world.consumers.ConsumePower",
+      "emit": "consume-object",
+      "consumeKey": "power",
+      "signatures": [
+        {
+          "params": [
+            "usage",
+            "capacity",
+            "buffered"
+          ],
+          "fields": [
+            "usage",
+            "capacity",
+            "buffered"
+          ]
+        }
+      ]
+    },
+    "ConsumeItems": {
+      "fqcn": "mindustry.world.consumers.ConsumeItems",
+      "emit": "consume-object",
+      "consumeKey": "items",
+      "signatures": [
+        {
+          "params": [
+            "items"
+          ],
+          "fields": [
+            "items"
+          ]
+        }
+      ]
+    },
+    "ConsumeLiquids": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquids",
+      "emit": "consume-object",
+      "consumeKey": "liquids",
+      "signatures": [
+        {
+          "params": [
+            "liquids"
+          ],
+          "fields": [
+            "liquids"
+          ]
+        }
+      ]
+    },
+    "ConsumeCoolant": {
+      "fqcn": "mindustry.world.consumers.ConsumeCoolant",
+      "emit": "consume-object",
+      "consumeKey": "coolant",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "amount"
+          ],
+          "fields": [
+            "amount"
+          ]
+        },
+        {
+          "params": [
+            "amount",
+            "allowLiquid",
+            "allowGas"
+          ],
+          "fields": [
+            "amount",
+            "allowLiquid",
+            "allowGas"
+          ]
+        }
+      ]
+    },
+    "ConsumeItemExplode": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemExplode",
+      "emit": "consume-object",
+      "consumeKey": "itemExplode",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "threshold"
+          ],
+          "fields": [
+            "threshold"
+          ]
+        }
+      ]
+    },
+    "ConsumeItemRadioactive": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemRadioactive",
+      "emit": "consume-object",
+      "consumeKey": "itemRadioactive",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "minRadioactivity"
+          ],
+          "fields": [
+            "minRadioactivity"
+          ]
+        }
+      ]
+    },
+    "ConsumeItemExplosive": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemExplosive",
+      "emit": "consume-object",
+      "consumeKey": "itemExplosive",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "minCharge"
+          ],
+          "fields": [
+            "minCharge"
+          ]
+        }
+      ]
+    },
+    "ConsumeItemFlammable": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemFlammable",
+      "emit": "consume-object",
+      "consumeKey": "itemFlammable",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "minFlammability"
+          ],
+          "fields": [
+            "minFlammability"
+          ]
+        }
+      ]
+    },
+    "ConsumeItemCharged": {
+      "fqcn": "mindustry.world.consumers.ConsumeItemCharged",
+      "emit": "consume-object",
+      "consumeKey": "itemCharged",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "minCharge"
+          ],
+          "fields": [
+            "minCharge"
+          ]
+        }
+      ]
+    },
+    "ConsumeLiquidFlammable": {
+      "fqcn": "mindustry.world.consumers.ConsumeLiquidFlammable",
+      "emit": "consume-object",
+      "consumeKey": "liquidFlammable",
+      "signatures": [
+        {
+          "params": []
+        },
+        {
+          "params": [
+            "amount"
+          ],
+          "fields": [
+            "amount"
+          ]
+        },
+        {
+          "params": [
+            "minFlammability",
+            "amount"
+          ],
+          "fields": [
+            "minFlammability",
+            "amount"
+          ]
+        }
+      ]
+    }
+  },
+  "builderMappings": {
+    "requirements": {
+      "receiver": "Block",
+      "overloads": [
+        {
+          "params": [
+            "category",
+            "requirements"
+          ],
+          "writes": {
+            "category": "arg[0]",
+            "requirements": "flattenStacks(arg[1])",
+            "buildVisibility": "shown"
+          }
+        },
+        {
+          "params": [
+            "category",
+            "visibility",
+            "requirements"
+          ],
+          "writes": {
+            "category": "arg[0]",
+            "buildVisibility": "arg[1]",
+            "requirements": "flattenStacks(arg[2])"
+          }
+        },
+        {
+          "params": [
+            "category",
+            "requirements",
+            "unlocked"
+          ],
+          "writes": {
+            "category": "arg[0]",
+            "requirements": "flattenStacks(arg[1])",
+            "buildVisibility": "shown",
+            "alwaysUnlocked": "arg[2]"
+          }
+        }
+      ]
+    },
+    "consumePower": {
+      "receiver": "Block",
+      "params": [
+        "usage"
+      ],
+      "writesPath": "consumes.power",
+      "value": "arg[0]"
+    },
+    "consumePowerBuffered": {
+      "receiver": "Block",
+      "params": [
+        "capacity"
+      ],
+      "writesPath": "consumes.powerBuffered",
+      "value": "arg[0]"
+    },
+    "consumeItem": {
+      "receiver": "Block",
+      "overloads": [
+        {
+          "params": [
+            "item"
+          ],
+          "writesPath": "consumes.items",
+          "value": "[{item: arg[0], amount: 1}]"
+        },
+        {
+          "params": [
+            "item",
+            "amount"
+          ],
+          "writesPath": "consumes.items",
+          "value": "[{item: arg[0], amount: arg[1]}]"
+        }
+      ]
+    },
+    "consumeItems": {
+      "receiver": "Block",
+      "params": [
+        "items..."
+      ],
+      "writesPath": "consumes.items",
+      "value": "flattenStacks(args)"
+    },
+    "consumeLiquid": {
+      "receiver": "Block",
+      "params": [
+        "liquid",
+        "amount"
+      ],
+      "writesPath": "consumes.liquid",
+      "value": "{liquid:arg[0], amount:arg[1]}"
+    },
+    "consumeLiquids": {
+      "receiver": "Block",
+      "params": [
+        "liquids..."
+      ],
+      "writesPath": "consumes.liquids",
+      "value": "flattenStacks(args)"
+    },
+    "consumeCoolant": {
+      "receiver": "Block",
+      "overloads": [
+        {
+          "params": [
+            "amount"
+          ],
+          "writesPath": "consumes.coolant",
+          "value": "{amount:arg[0]}"
+        },
+        {
+          "params": [
+            "amount",
+            "allowLiquid",
+            "allowGas"
+          ],
+          "writesPath": "consumes.coolant",
+          "value": "{amount:arg[0], allowLiquid:arg[1], allowGas:arg[2]}"
+        }
+      ]
+    },
+    "consume": {
+      "receiver": "Block",
+      "params": [
+        "consumeObject"
+      ],
+      "writesPath": "consumes.<key-derived-from-Consume-subclass>",
+      "value": "serializeConsume(arg[0])"
+    },
+    "boost": {
+      "receiver": "Consume",
+      "chainWrites": {
+        "optional": true,
+        "booster": true
+      }
+    },
+    "optional": {
+      "receiver": "Consume",
+      "params": [
+        "optional",
+        "booster"
+      ],
+      "chainWrites": {
+        "optional": "arg[0]",
+        "booster": "arg[1]"
+      }
+    },
+    "update": {
+      "receiver": "Consume",
+      "params": [
+        "update"
+      ],
+      "chainWrites": {
+        "update": "arg[0]"
+      }
+    },
+    "ammo": {
+      "receiver": "ItemTurret|LiquidTurret|ContinuousLiquidTurret|PayloadAmmoTurret",
+      "params": [
+        "key,value..."
+      ],
+      "writes": "ammoTypes",
+      "value": "alternatingPairsToMap(args)"
+    },
+    "add": {
+      "receiver": "Seq|ObjectSet",
+      "params": [
+        "value"
+      ],
+      "writes": "receiverField",
+      "mode": "append"
+    },
+    "addAll": {
+      "receiver": "Seq|ObjectSet",
+      "params": [
+        "values..."
+      ],
+      "writes": "receiverField",
+      "mode": "append-all"
+    },
+    "put": {
+      "receiver": "ObjectMap|ObjectFloatMap|ObjectIntMap",
+      "params": [
+        "key",
+        "value"
+      ],
+      "writes": "receiverField",
+      "mode": "map-put"
+    },
+    "putAll": {
+      "receiver": "ObjectMap|ObjectFloatMap|ObjectIntMap",
+      "params": [
+        "map"
+      ],
+      "writes": "receiverField",
+      "mode": "map-merge"
+    },
+    "set": {
+      "receiver": "Attributes",
+      "params": [
+        "attribute",
+        "value"
+      ],
+      "writes": "receiverField",
+      "mode": "attribute-put",
+      "key": "staticFieldName(arg[0])"
+    },
+    "setEnginesMirror": {
+      "receiver": "UnitType",
+      "params": [
+        "engines..."
+      ],
+      "writes": "engines",
+      "mode": "append-expanded",
+      "expand": "for each {x,y,radius,rotation}, append original and {x:-x,y,radius,rotation:normalize360(180-rotation)}"
+    },
+    "opposite": {
+      "receiver": "StatusEffect",
+      "params": [
+        "statuses..."
+      ],
+      "writes": "opposites",
+      "mode": "append-all",
+      "fidelity": "display-only",
+      "diagnostic": "JAVA_STATUS_TRANSITION_BEHAVIOR_DROPPED"
+    },
+    "affinity": {
+      "receiver": "StatusEffect",
+      "params": [
+        "status",
+        "handler"
+      ],
+      "writes": "affinities",
+      "mode": "append",
+      "fidelity": "display-only; handler cannot be represented",
+      "diagnostic": "JAVA_STATUS_TRANSITION_BEHAVIOR_DROPPED"
+    },
+    "copy": {
+      "receiver": "IR object",
+      "params": [],
+      "result": "deepCopy(receiver)",
+      "condition": "receiver object graph is already statically known"
+    },
+    "copyRotate": {
+      "receiver": "SFUnitTypes helper",
+      "params": [
+        "weapon",
+        "x",
+        "y",
+        "baseRotation"
+      ],
+      "result": "deepCopy(arg[0]) then set x/y/baseRotation"
+    },
+    "copyRotRel": {
+      "receiver": "SFUnitTypes helper",
+      "params": [
+        "weapon",
+        "x",
+        "y",
+        "baseRotation",
+        "reloadOffset"
+      ],
+      "result": "deepCopy(arg[0]) then set x/y/baseRotation and reload += reloadOffset"
+    }
+  },
+  "staticFactories": {
+    "ItemStack.with|with": {
+      "shape": "alternating item,amount pairs",
+      "result": "ItemStack[]"
+    },
+    "LiquidStack.with": {
+      "shape": "alternating liquid,amount pairs",
+      "result": "LiquidStack[]"
+    },
+    "ItemStack.mult": {
+      "params": [
+        "baseStacks",
+        "multiplier"
+      ],
+      "result": "copy stacks and amount = Mathf.round(originalAmount * multiplier)",
+      "condition": "baseStacks must be statically known; otherwise diagnostic JAVA_EXPRESSION_UNRESOLVED"
+    },
+    "Seq.with": {
+      "result": "array(args)"
+    },
+    "ObjectSet.with": {
+      "result": "uniqueArray(args)"
+    },
+    "ObjectMap.of|OrderedMap.of": {
+      "shape": "alternating key,value pairs",
+      "result": "map"
+    },
+    "Color.valueOf": {
+      "result": "normalized RGBA hex string"
+    },
+    "Sounds.<field>": {
+      "result": "sound field name as string"
+    },
+    "Fx.<field>": {
+      "result": "effect field name as string"
+    },
+    "Interp.<field>": {
+      "result": "interp field name as string"
+    },
+    "Blending.<field>": {
+      "result": "blending field name as string"
+    },
+    "CacheLayer.<field>": {
+      "result": "cache layer field name as string"
+    },
+    "BuildVisibility.<field>": {
+      "result": "visibility field name as string"
+    },
+    "Category.<field>": {
+      "result": "category field name as string"
+    },
+    "Attribute.<field>": {
+      "result": "attribute field name as string"
+    },
+    "SFSounds.loadSound|Vars.tree.loadSound": {
+      "params": [
+        "assetName"
+      ],
+      "result": "source asset name; namespace rewriter converts to dp-*"
+    }
+  },
+  "partProgress": {
+    "constants": [
+      "reload",
+      "smoothReload",
+      "warmup",
+      "charge",
+      "recoil",
+      "smoothRecoil",
+      "heat",
+      "life",
+      "time",
+      "sin",
+      "reloadWarmup"
+    ],
+    "emit": {
+      "single": "string constant",
+      "chain": "{type:<base>, operations:[...]}"
+    },
+    "operations": {
+      "inv": [],
+      "slope": [],
+      "clamp": [],
+      "delay": [
+        "amount"
+      ],
+      "sustain": [
+        "offset",
+        "grow",
+        "sustain"
+      ],
+      "shorten": [
+        "amount"
+      ],
+      "compress": [
+        "start",
+        "end"
+      ],
+      "add": [
+        "amount-or-other"
+      ],
+      "blend": [
+        "other",
+        "amount"
+      ],
+      "mul": [
+        "amount-or-other"
+      ],
+      "min": [
+        "other"
+      ],
+      "sin": [
+        "offset",
+        "scl",
+        "mag"
+      ],
+      "absin": [
+        "scl",
+        "mag"
+      ],
+      "mod": [
+        "amount"
+      ],
+      "loop": [
+        "time"
+      ],
+      "curve": [
+        "interp OR offset,duration"
+      ]
+    }
+  },
+  "unitEntityAndControllerMappings": {
+    "methodReferences": {
+      "UnitEntity::create": "flying",
+      "MechUnit::create": "mech",
+      "LegsUnit::create": "legs",
+      "UnitWaterMove::create": "naval",
+      "PayloadUnit::create": "payload",
+      "TimedKillUnit::create": "missile",
+      "TankUnit::create": "tank",
+      "ElevationMoveUnit::create": "hover",
+      "BuildingTetherPayloadUnit::create": "tether",
+      "CrawlUnit::create": "crawl"
+    },
+    "javaAssignments": {
+      "constructor = UnitTypes.<name>.constructor": "look up trusted v159.7 EntityMapping catalog, then emit unit root field type",
+      "constructor = EntityMapping.map(<constant>)": "look up trusted v159.7 ID catalog, then emit unit root field type",
+      "aiController = <AI>::new": "emit aiController: <ClassMap short name>",
+      "controller = u -> new <AI>()": "emit defaultController: <ClassMap short name>"
+    },
+    "saturationReferencedVanillaCatalog": {
+      "flare": "flying",
+      "elude": "hover",
+      "corvus": "legs",
+      "zenith": "flying",
+      "reign": "mech",
+      "omura": "naval",
+      "oct": "payload",
+      "eclipse": "flying",
+      "stell": "tank",
+      "quad": "payload",
+      "risso": "naval",
+      "mega": "payload",
+      "dagger": "mech",
+      "atrax": "legs",
+      "gamma": "flying",
+      "assembly-drone": "tether",
+      "EntityMapping.map(3)": "flying"
+    }
+  },
+  "inlineContentPromotion": {
+    "match": "new Item/Liquid/StatusEffect/UnitType subclass appears inside another content object",
+    "rule": "emit it as its own root content file, add dependency edge, replace inline value with a content reference",
+    "requiredFor": [
+      "BulletType.spawnUnit and similar UnitType fields"
+    ],
+    "diagnostic": "JAVA_CONTENT_PROMOTED",
+    "forbidden": "Never emit an inline UnlockableContent object; DataPatcher rejects new content instantiated in a field."
+  },
+  "effectFallback": {
+    "anonymousEffectOrLambda": "replace with string none unless a dedicated deterministic recognizer maps it to ParticleEffect/WaveEffect/ExplosionEffect",
+    "customEffectFactory": "replace with none and report the method/factory; do not guess arbitrary renderer behavior",
+    "standardEffectClasses": "preserve public fields and known Effect chain setters startDelay/followParent/rotWithParent/layer/baseRotation",
+    "diagnostic": "JAVA_LAMBDA_UNSUPPORTED"
+  },
+  "explicitDegradations": {
+    "SFire.expand.blocks.EnhancedPowerTurret": {
+      "simpleName": "EnhancedPowerTurret",
+      "targetType": "PowerTurret",
+      "rootKind": "block",
+      "strategy": "nearest-ClassMap-parent",
+      "preserveFields": "all fields valid on PowerTurret, especially shootType and standard Turret fields",
+      "dropFields": [
+        "enhancerItem",
+        "enhancedBullet",
+        "enhancedPattern",
+        "maxEnhanced"
+      ],
+      "lostBehavior": [
+        "item-based enhanced ammo buffer",
+        "enhanced bullet selection",
+        "enhanced shoot pattern",
+        "custom ammo bar/stats"
+      ],
+      "severity": "error"
+    },
+    "SFire.expand.blocks.ExplodeWall": {
+      "simpleName": "ExplodeWall",
+      "targetType": "Wall",
+      "rootKind": "block",
+      "strategy": "semantic-wall-fallback",
+      "preserveFields": [
+        "health",
+        "armor",
+        "size",
+        "requirements",
+        "category",
+        "destroyEffect",
+        "buildCostMultiplier",
+        "crushDamageMultiplier",
+        "flags",
+        "priority"
+      ],
+      "injectConstructorFields": {
+        "solid": true,
+        "destructible": true,
+        "canOverdrive": false,
+        "drawDisabled": false,
+        "buildCostMultiplier": 4,
+        "crushDamageMultiplier": 5
+      },
+      "dropFields": [
+        "timerCheck",
+        "checkInterval",
+        "range",
+        "expDamage",
+        "shake",
+        "expLimit",
+        "buildingDamageMultiplier",
+        "hitEffect",
+        "waveEffect",
+        "waveColor"
+      ],
+      "lostBehavior": [
+        "low-health projectile interception",
+        "self-kill trigger",
+        "area damage on destruction",
+        "custom selection/range drawing"
+      ],
+      "severity": "error"
+    },
+    "SFire.expand.blocks.GasTurbineGenerator": {
+      "simpleName": "GasTurbineGenerator",
+      "targetType": "ConsumeGenerator",
+      "rootKind": "block",
+      "strategy": "nearest-ClassMap-parent",
+      "preserveFields": "standard ConsumeGenerator fields including warmupSpeed, itemDuration, powerProduction, effects, outputLiquid and consumes",
+      "dropFields": [
+        "extraPower",
+        "powerUpSpeed"
+      ],
+      "lostBehavior": [
+        "delayed fifth-power warmup curve",
+        "extra power ramp multiplier",
+        "custom boost/power bars and serialization"
+      ],
+      "severity": "error"
+    },
+    "SFire.expand.blocks.PressureDrill": {
+      "simpleName": "PressureDrill",
+      "targetType": "Drill",
+      "rootKind": "block",
+      "strategy": "nearest-ClassMap-parent",
+      "preserveFields": "all standard Drill fields and consumes",
+      "dropFields": [
+        "maxFactor",
+        "minPowerNeed"
+      ],
+      "lostBehavior": [
+        "dynamic speed from live power-balance surplus",
+        "custom boost bar/stats"
+      ],
+      "severity": "error"
+    },
+    "SFire.expand.blocks.SFCore": {
+      "simpleName": "SFCore",
+      "targetType": "CoreBlock",
+      "rootKind": "block",
+      "strategy": "nearest-ClassMap-parent",
+      "preserveFields": "all CoreBlock fields",
+      "dropFields": [
+        "maxNumber"
+      ],
+      "lostBehavior": [
+        "per-team core count placement limit",
+        "special break/replace rules",
+        "remaining-core bar"
+      ],
+      "severity": "error"
+    },
+    "SFire.expand.bullets.PowerupBullet": {
+      "simpleName": "PowerupBullet",
+      "targetType": "BasicBulletType",
+      "strategy": "nearest-ClassMap-parent",
+      "constructorMap": [
+        "speed",
+        "damage",
+        "sprite"
+      ],
+      "injectConstructorFields": {
+        "pierce": true,
+        "reflectable": false
+      },
+      "dropFields": [
+        "maxDamageMultiplier",
+        "damageUp"
+      ],
+      "lostBehavior": [
+        "damage growth after each pierce"
+      ],
+      "severity": "error"
+    },
+    "SFire.expand.bullets.ShieldBreakBullet": {
+      "simpleName": "ShieldBreakBullet",
+      "targetType": "BasicBulletType",
+      "strategy": "nearest-ClassMap-parent",
+      "constructorMap": [
+        "speed",
+        "damage",
+        "sprite?"
+      ],
+      "injectConstructorFields": {
+        "hittable": false,
+        "reflectable": false,
+        "absorbable": false
+      },
+      "dropFields": [
+        "shieldDamagePercent",
+        "shbreakEffect"
+      ],
+      "lostBehavior": [
+        "damage proportional to current shield"
+      ],
+      "severity": "error"
+    },
+    "SFire.expand.bullets.SizeDamageBullet": {
+      "simpleName": "SizeDamageBullet",
+      "targetType": "BasicBulletType",
+      "strategy": "nearest-ClassMap-parent",
+      "constructorMap": [
+        "speed",
+        "damage",
+        "sprite"
+      ],
+      "dropFields": [
+        "sizeDamageMul",
+        "basicSize"
+      ],
+      "lostBehavior": [
+        "damage scaled by target hit size"
+      ],
+      "severity": "error"
+    }
+  },
+  "unsupportedPatterns": [
+    {
+      "pattern": "method override or anonymous method body",
+      "action": "drop behavior, retain public field initializers, mark containing content degraded",
+      "diagnostic": "JAVA_METHOD_OVERRIDE_DROPPED"
+    },
+    {
+      "pattern": "lambda assigned to renderer/update/hit/AI/consumer callback",
+      "action": "drop or nearest standard fallback",
+      "diagnostic": "JAVA_LAMBDA_UNSUPPORTED"
+    },
+    {
+      "pattern": "reflection, arbitrary class loading, file/network/event/UI access",
+      "action": "never evaluate or execute; exclude expression/content as appropriate",
+      "diagnostic": "JAVA_UNSAFE_CODE_NOT_EXECUTED"
+    },
+    {
+      "pattern": "StatusEffect affinity/opposite transition handler",
+      "action": "optionally keep affinities/opposites for display only; report behavior loss",
+      "diagnostic": "JAVA_STATUS_TRANSITION_BEHAVIOR_DROPPED"
+    },
+    {
+      "pattern": "consumePowerDynamic/consumePowerCond or predicate-based Consume filters",
+      "action": "cannot preserve callback; use fixed declared/displayed value only when explicitly available, otherwise drop consume",
+      "diagnostic": "JAVA_DYNAMIC_CONSUMER_DROPPED"
+    },
+    {
+      "pattern": "unresolved constructor argument required for parser initialization",
+      "action": "do not emit malformed object; fail that nested object and degrade/fail its owner based on requiredness",
+      "diagnostic": "JAVA_EXPRESSION_UNRESOLVED"
+    }
+  ],
+  "reportingContract": {
+    "statuses": [
+      "converted",
+      "degraded",
+      "excluded",
+      "unsupported",
+      "failed"
+    ],
+    "requiredPerDiagnostic": [
+      "code",
+      "severity",
+      "source path",
+      "line/column when known",
+      "content kind/name",
+      "Java construct",
+      "target fallback or omitted field",
+      "lost behavior",
+      "suggested manual action"
+    ],
+    "contentRule": "Any emitted content with at least one dropped field, callback, constructor semantic, or fallback class is degraded, never converted.",
+    "summaryCounters": [
+      "root content discovered",
+      "root content emitted",
+      "nested objects emitted",
+      "promoted content",
+      "degraded types",
+      "dropped fields",
+      "dropped behaviors",
+      "unresolved expressions",
+      "failed outputs"
+    ]
+  },
+  "safeExpressionSubset": {
+    "supported": [
+      "string/char/boolean/null/numeric literals",
+      "parentheses and primitive casts",
+      "unary + - !",
+      "constant arithmetic + - * / %",
+      "string concatenation",
+      "constant ternary",
+      "array initializer",
+      "static final constants whose initializer is in the parsed source graph",
+      "known content/static field references",
+      "known constructor/factory/builder mappings"
+    ],
+    "colorChains": {
+      "cpy": "copy",
+      "set(color)": "replace with color",
+      "a(alpha)": "replace alpha",
+      "mul(scalar)": "multiply rgba channels using target Color semantics",
+      "lerp(color,t)": "linear interpolate rgba"
+    },
+    "boundedControlFlow": {
+      "for": "expand only statically bounded integer/enhanced loops; enforce an expansion limit and record each generated element source location",
+      "knownIterables": {
+        "Mathf.signs": [
+          -1,
+          1
+        ]
+      },
+      "if": "execute only when condition is statically boolean; otherwise report both affected statements as unsupported",
+      "locals": "support final/effectively-final locals and loop-index-derived arithmetic"
+    },
+    "helperMethods": {
+      "SFireMod.name(x)": "sourceNamespace + \"-\" + x (keep SOURCE namespace; shared rewriter handles member names)",
+      "simple pure copy helpers": "allow only explicitly registered helpers such as copyRotate/copyRotRel; never execute their Java body"
+    },
+    "prohibited": [
+      "reflection",
+      "class loading",
+      "I/O",
+      "network",
+      "events",
+      "UI",
+      "threads",
+      "native calls",
+      "arbitrary method calls",
+      "runtime world/game state"
+    ]
+  },
+  "parserFailureGuards": [
+    {
+      "object": "StatusFieldAbility",
+      "guard": "constructor effect must be emitted; null effect fails ContentParser.checkNullFields"
+    },
+    {
+      "object": "ItemStack",
+      "guard": "item and amount must be emitted; never serialize as {type:ItemStack} without item"
+    },
+    {
+      "object": "LiquidStack",
+      "guard": "liquid and amount must be emitted; never serialize alternating raw values as LiquidStack[]"
+    },
+    {
+      "object": "UnitPlan",
+      "guard": "unit, time and requirements must be emitted"
+    },
+    {
+      "object": "Ability",
+      "guard": "type is mandatory and must resolve through ClassMap; required non-null fields from constructor must be lowered"
+    },
+    {
+      "object": "inline UnlockableContent",
+      "guard": "promote to root content; DataPatcher rejects inline creation"
+    },
+    {
+      "object": "root Block type",
+      "guard": "must be an effective ClassMap short name with String constructor; unknown custom type is a hard asset error because allowClassResolution=false"
+    },
+    {
+      "object": "unit template",
+      "guard": "must resolve through ClassMap; unknown names fall back with warning and must be reported as degradation before validation"
+    },
+    {
+      "object": "Effect lambda",
+      "guard": "do not emit type Effect; Effect is not a ClassMap entry and fallback-to-ParticleEffect warnings are not fidelity"
+    },
+    {
+      "object": "Weapon.name",
+      "guard": "keep source member naming until namespace rewrite; emitting dp-* before ContentParser produces dp-dp-*"
+    },
+    {
+      "object": "addAll",
+      "guard": "flatten collection/array argument; nested arrays usually fail element parsing"
+    },
+    {
+      "object": "map factories",
+      "guard": "ObjectMap.of/OrderedMap.of/ammo alternating pairs must become JSON object maps, never arrays"
+    }
+  ]
+}
