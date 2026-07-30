@@ -330,6 +330,10 @@ CLI 退出码：
 
 提交问题时，建议附上：工具版本、目标 Mindustry build、CLI 命令、`report.json`、`report.md`、`logs/`、客户端/服务器日志，以及最小可复现输入；上传前请先脱敏并确认输入许可。
 
+## 额外声明
+
+本项目为vibe coding产物，使用模型为gpt5.6-sol，初版为8小时内完成开发，且仅以饱和火力为参照mod，实际可用性未得到验证，且项目当前可能存在较多bug
+
 ## 许可证
 
 本项目以 [GNU General Public License v3.0](LICENSE) 发布。
