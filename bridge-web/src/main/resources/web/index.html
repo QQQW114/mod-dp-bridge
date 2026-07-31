@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#17191c">
+    <meta name="color-scheme" content="dark">
+    <meta name="description" content="将 Mindustry 146+ Mod 尽力转换为 159+ Data Pack，并完整报告转换结果。">
+    <title>Mod → DP Bridge</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main-content">跳到主要内容</a>
+
+<header class="app-header">
+    <div class="header-inner">
+        <a class="brand" href="/" aria-label="Mod DP Bridge 首页">
+            <span class="brand-mark" aria-hidden="true">
+                <span></span><span></span><span></span>
+            </span>
+            <span class="brand-copy">
+                <strong>MOD <span>→</span> DP BRIDGE</strong>
+                <small>MINDUSTRY v159.7 / B480 DATA PACK CONVERTER</small>
+            </span>
+        </a>
+        <div class="service-state" id="service-state" role="status">
+            <span class="state-dot" aria-hidden="true"></span>
+            <span id="service-state-text">正在检查服务</span>
+        </div>
+    </div>
+</header>
+
+<main id="main-content" class="page-shell">
+    <section class="hero" aria-labelledby="page-title">
+        <div>
+            <p class="eyebrow"><span>SERVER TOOL</span> / STATIC CONVERSION</p>
+            <h1 id="page-title">把旧版 Mod 桥接为<br><em>v159.7 / B480 DP</em></h1>
+        </div>
+        <p class="hero-copy">
+            上传一个 Mindustry 146+ Mod。工具会静态分析内容和资源，尽力迁移单位、建筑、炮塔、物品、流体、音效与贴图，并逐项列出无法还原的部分。
+        </p>
+    </section>
+
+    <div class="workspace-grid">
+        <section class="panel upload-panel" aria-labelledby="upload-heading">
+            <header class="panel-heading">
+                <span class="step-number" aria-hidden="true">01</span>
+                <div>
+                    <p>INPUT</p>
+                    <h2 id="upload-heading">选择 Mod</h2>
+                </div>
+            </header>
+
+            <input
+                id="mod-file"
+                class="visually-hidden"
+                type="file"
+                accept=".zip,.jar,.hjson,.json,.json5,application/zip,application/java-archive,application/json"
+                aria-describedby="file-help"
+            >
+            <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-controls="mod-file">
+                <div class="drop-icon" aria-hidden="true">
+                    <span class="drop-arrow"></span>
+                    <span class="drop-tray"></span>
+                </div>
+                <strong>拖拽 Mod 到这里</strong>
+                <span>或点击选择文件</span>
+                <small id="file-help">.zip / .jar / .hjson / .json / .json5 · 目录请先压缩</small>
+            </div>
+
+            <div id="selected-file" class="selected-file" hidden>
+                <span id="file-glyph" class="file-glyph" aria-hidden="true">ZIP</span>
+                <div class="file-copy">
+                    <strong id="selected-file-name"></strong>
+                    <span id="selected-file-meta"></span>
+                </div>
+                <button id="remove-file" class="icon-button" type="button" aria-label="移除所选文件" title="移除文件">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </div>
+
+            <p id="upload-error" class="inline-message error-message" role="alert" hidden></p>
+
+            <div class="primary-actions">
+                <button id="start-button" class="button button-primary" type="button" disabled>
+                    <span class="button-icon play-icon" aria-hidden="true"></span>
+                    <span>开始转换</span>
+                </button>
+                <button id="cancel-button" class="button button-danger" type="button" disabled>
+                    <span class="button-icon stop-icon" aria-hidden="true"></span>
+                    <span>终止转换</span>
+                </button>
+            </div>
+
+            <aside class="scope-note">
+                <span class="scope-icon" aria-hidden="true">i</span>
+                <p><strong>静态转换</strong>：服务器不会编译、反射或执行上传 Mod 中的代码。GUI、科技树、新地图和自定义网络逻辑不在迁移范围内。</p>
+            </aside>
+        </section>
+
+        <section class="panel process-panel" aria-labelledby="process-heading">
+            <header class="panel-heading process-heading">
+                <span class="step-number" aria-hidden="true">02</span>
+                <div>
+                    <p>CONVERSION</p>
+                    <h2 id="process-heading">转换进程</h2>
+                </div>
+                <span id="job-status" class="status-badge status-idle">等待文件</span>
+            </header>
+
+            <div class="progress-area" aria-live="polite">
+                <div class="progress-labels">
+                    <span id="phase-label">尚未开始</span>
+                    <strong id="progress-value">0%</strong>
+                </div>
+                <div
+                    id="progress-track"
+                    class="progress-track"
+                    role="progressbar"
+                    aria-label="转换进度"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                >
+                    <span id="progress-bar"></span>
+                </div>
+                <div class="job-meta">
+                    <span>任务 <code id="job-id">—</code></span>
+                    <span>耗时 <time id="elapsed-time">00:00</time></span>
+                </div>
+            </div>
+
+            <div class="terminal" aria-labelledby="terminal-title">
+                <div class="terminal-bar">
+                    <div class="window-controls" aria-hidden="true"><i></i><i></i><i></i></div>
+                    <span id="terminal-title">conversion.log</span>
+                    <div class="terminal-tools">
+                        <label class="auto-scroll-toggle">
+                            <input id="auto-scroll" type="checkbox" checked>
+                            <span>自动滚动</span>
+                        </label>
+                        <button id="copy-log" class="terminal-button" type="button" title="复制当前日志">复制</button>
+                    </div>
+                </div>
+                <div id="terminal-output" class="terminal-output" tabindex="0" role="log" aria-live="off" aria-relevant="additions text">
+                    <div class="terminal-line line-muted"><span class="line-time">--:--:--</span><span>等待转换任务…</span></div>
+                </div>
+            </div>
+
+            <div class="download-row" aria-label="下载转换结果">
+                <a id="download-result" class="button button-download is-disabled" href="#" aria-disabled="true">
+                    <span class="download-icon" aria-hidden="true"></span>
+                    <span><strong>下载转换后 Mod</strong><small>Data Pack ZIP</small></span>
+                </a>
+                <a id="download-logs" class="button button-download is-disabled" href="#" aria-disabled="true">
+                    <span class="download-icon" aria-hidden="true"></span>
+                    <span><strong>下载全部日志</strong><small>Logs ZIP</small></span>
+                </a>
+            </div>
+        </section>
+    </div>
+
+    <section id="report-section" class="report-section" aria-labelledby="report-heading">
+        <details id="report-details" class="report-shell">
+            <summary>
+                <span class="report-chevron" aria-hidden="true"></span>
+                <span class="report-heading-copy">
+                    <small>03 / AUDIT REPORT</small>
+                    <strong id="report-heading">完成项与缺失项报告</strong>
+                    <span id="report-summary-text">转换完成后，可在这里核对每一项结果</span>
+                </span>
+                <span id="report-overall" class="status-badge status-idle">尚无报告</span>
+            </summary>
+
+            <div class="report-body">
+                <div id="report-loading" class="report-placeholder">
+                    <span class="placeholder-grid" aria-hidden="true"></span>
+                    <p>报告将在转换结束后载入。</p>
+                </div>
+
+                <div id="report-content" hidden>
+                    <div id="report-notice" class="report-notice" hidden></div>
+
+                    <div class="summary-grid" aria-label="转换结果数量">
+                        <div class="summary-card summary-converted">
+                            <span>已转换</span><strong id="count-converted">0</strong><small>converted</small>
+                        </div>
+                        <div class="summary-card summary-degraded">
+                            <span>降级实现</span><strong id="count-degraded">0</strong><small>degraded</small>
+                        </div>
+                        <div class="summary-card summary-excluded">
+                            <span>范围外</span><strong id="count-excluded">0</strong><small>excluded</small>
+                        </div>
+                        <div class="summary-card summary-unsupported">
+                            <span>暂不支持</span><strong id="count-unsupported">0</strong><small>unsupported</small>
+                        </div>
+                        <div class="summary-card summary-failed">
+                            <span>转换失败</span><strong id="count-failed">0</strong><small>failed</small>
+                        </div>
+                    </div>
+
+                    <details class="report-group validation-group">
+                        <summary>
+                            <span class="group-title"><i aria-hidden="true"></i>验证阶段</span>
+                            <span id="validation-count" class="group-count">0 项</span>
+                        </summary>
+                        <div id="validation-list" class="validation-list"></div>
+                    </details>
+
+                    <div id="result-groups" class="result-groups"></div>
+
+                    <details class="report-group diagnostics-group">
+                        <summary>
+                            <span class="group-title"><i aria-hidden="true"></i>诊断与对应日志</span>
+                            <span id="diagnostics-count" class="group-count">0 项</span>
+                        </summary>
+                        <div class="group-toolbar">
+                            <label class="search-field">
+                                <span class="visually-hidden">搜索诊断</span>
+                                <input id="diagnostic-search" type="search" placeholder="搜索代码、消息或路径…" autocomplete="off">
+                            </label>
+                        </div>
+                        <div id="diagnostics-list" class="diagnostics-list"></div>
+                    </details>
+
+                    <details class="report-group inventory-group">
+                        <summary>
+                            <span class="group-title"><i aria-hidden="true"></i>清单与源文件统计</span>
+                            <span id="inventory-count" class="group-count">0 个文件</span>
+                        </summary>
+                        <div id="inventory-content" class="inventory-content"></div>
+                    </details>
+                </div>
+            </div>
+        </details>
+    </section>
+</main>
+
+<footer class="app-footer">
+    <div>
+        <span>MOD → DP BRIDGE</span>
+        <p>结果以报告为准；“可转换”不代表所有自定义 Java 行为均可复刻。</p>
+    </div>
+    <a href="https://github.com/QQQW114/mod-dp-bridge" target="_blank" rel="noopener noreferrer">GitHub / GPL-3.0</a>
+</footer>
+
+<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+</body>
+</html>

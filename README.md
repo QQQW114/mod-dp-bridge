@@ -3,7 +3,7 @@
 将 Mindustry Mod、旧式 CP 和已有 Data Pack **尽力静态迁移**为 Mindustry **v159.7 / B480 Data Assets（DP）**。
 
 > [!IMPORTANT]
-> 本项目目前是实验性 CLI，目标版本固定为 **v159.7 / B480**。转换成功表示生成了可审计、可继续测试的 DP 候选，**不表示原 Mod 的全部 Java 行为已被等价还原**。使用前请阅读生成的 `report.md`，正式部署前请在真实客户端和服务器地图中验证。
+> 本项目目前是实验性转换工具，提供 CLI 和本地 Web UI，目标版本固定为 **v159.7 / B480**。转换成功表示生成了可审计、可继续测试的 DP 候选，**不表示原 Mod 的全部 Java 行为已被等价还原**。使用前请阅读生成的 `report.md`，正式部署前请在真实客户端和服务器地图中验证。
 
 项目坚持三个原则：
 
@@ -28,7 +28,7 @@
 | 单位/炮塔描边、炮塔及多层工厂建造栏组合图 | 确定性离线生成；不能生成的项目会集中报告 |
 | v159.7 结构验证 | 自动执行 |
 | B480 `DataManager.load` / `DataPatcher.apply` | 提供可信 Server JAR 后可选执行 |
-| Web UI / HTTP API | 暂无，待 CLI 核心稳定后再考虑 |
+| Web UI / HTTP API | 支持本地上传、排队/终止、实时日志、产物/日志下载和折叠报告；无内置认证，不应直接暴露公网 |
 
 ### Java 静态导出
 
@@ -90,22 +90,22 @@ git clone https://github.com/QQQW114/mod-dp-bridge.git
 cd mod-dp-bridge
 ```
 
-Windows PowerShell：
+Windows PowerShell（同时构建 CLI 和 Web UI 分发包）：
 
 ```powershell
-.\scripts\gradle.ps1 build :bridge-cli:installDist
+.\scripts\gradle.ps1 build :bridge-cli:installDist :bridge-web:installDist
 ```
 
 `scripts/gradle.ps1` 会通过 ASCII Junction 运行 Gradle，用于规避 Windows 下工程路径含中文时 Test Worker classpath 参数文件的编码问题。若路径只含 ASCII，也可直接运行：
 
 ```powershell
-.\gradlew.bat build :bridge-cli:installDist
+.\gradlew.bat build :bridge-cli:installDist :bridge-web:installDist
 ```
 
 Linux/macOS：
 
 ```bash
-./gradlew build :bridge-cli:installDist
+./gradlew build :bridge-cli:installDist :bridge-web:installDist
 ```
 
 CLI 安装目录：
@@ -114,7 +114,37 @@ CLI 安装目录：
 bridge-cli/build/install/bridge-cli/
 ```
 
-## 快速使用
+Web UI 安装目录：
+
+```text
+bridge-web/build/install/mod-dp-bridge-web/
+```
+
+## Web UI 快速使用
+
+Windows：
+
+```powershell
+.\bridge-web\build\install\mod-dp-bridge-web\bin\mod-dp-bridge-web.bat
+```
+
+Linux/macOS：
+
+```bash
+./bridge-web/build/install/mod-dp-bridge-web/bin/mod-dp-bridge-web
+```
+
+然后在浏览器打开 [http://127.0.0.1:8080/](http://127.0.0.1:8080/)，拖拽或选择一个 Mod/CP/DP 文件并开始转换。页面提供：
+
+- 开始和终止转换；
+- 转换状态、进度与类似 Windows Terminal 的实时日志；
+- 转换后 DP ZIP 和全部日志归档下载；
+- 完成、降级、排除、不支持、失败项摘要，详细报告默认折叠；
+- 原始 `report.json` 访问。
+
+默认只监听 `127.0.0.1:8080`。所有请求还会校验 HTTP `Host` 白名单：默认允许 `localhost` / `127.0.0.1` / `::1`，具体的非通配监听地址会自动加入。远程访问需用 `MOD_DP_BRIDGE_ALLOWED_HOSTS` 显式列出域名/IP；特别是监听 `0.0.0.0` 或 `::` 时，通配地址不会自动放行任意 `Host`。该 DNS rebinding 防护不是身份认证。当前没有内置账号和权限系统，**不要直接监听公网地址**。完整环境变量、API 和反向代理要求见 [Web UI 与 HTTP API](docs/WEB_UI.md)。
+
+## CLI 快速使用
 
 ### 1. 转换
 
@@ -275,7 +305,7 @@ CLI 退出码：
 | B480 DataPatcher apply | 0 failed，0 warning |
 | 离线生成 full icon / outline | 87 / 326 |
 | 明确报告的离线图标缺失/不支持项目 | 152 |
-| 自动化测试 | 53 passed，0 failed |
+| 自动化测试 | 59 passed，0 failed（含 Web API 集成测试） |
 
 真实 B480 Desktop 已能导入生成 ZIP 并进入地图；最新测试反馈中，大部分单位、炮塔、工厂、建造栏组合图和描边已达到预期。该证据说明项目已能处理大型典型 Java Mod 的大部分原版可表达数据，但 **63 个 degraded Content 不等于原 Java 专用行为已被还原**，服务器真实地图加载仍需继续验证。
 
@@ -284,6 +314,7 @@ CLI 退出码：
 - [项目状态](docs/PROJECT_STATUS.md)
 - [架构设计](docs/ARCHITECTURE.md)
 - [测试与人工验收](docs/TESTING.md)
+- [Web UI、HTTP API 与安全部署](docs/WEB_UI.md)
 - [Java → DP 映射规则](docs/JAVA_TO_DP_MAPPING_V1597.md)
 - [B480 DataPatcher 验证语义](docs/DATA_PATCH_APPLY_VALIDATION.md)
 - [B480 客户端导入与已知问题](docs/B480_CLIENT_IMPORT_FIX_20260730.md)
@@ -297,6 +328,7 @@ CLI 退出码：
 5. **音频不自动转码。**扩展名与容器不一致时只警告并保留原字节，避免不可控质量和许可变化。
 6. **已有 DP 的文本尽量保持字节。**这是为了保护 generated content hash；普通 Mod 因重写命名空间必须规范化文本，仍需客户端检查 generated 资源。
 7. **B480 存在上游退出崩溃。**大型/多页 Data Assets 场景在退出地图或无核心编辑器地图退出时，可能触发 `DataImagePacker.unload()` 的 `key cannot be null`。该问题无法在不破坏资产的前提下由纯 DP 修复，应由客户端上游修补；详见上述 B480 客户端文档。
+8. **Web UI 是单实例本地任务层。**当前没有内置认证、用户隔离、分布式队列、对象存储或病毒扫描；远程部署必须在反向代理层补充 HTTPS、认证、授权和限流。
 
 ## 安全模型
 
@@ -306,6 +338,9 @@ CLI 退出码：
 - Java 语义仅通过确定性 AST 规则解释；
 - 输出使用确定性路径排序、固定 ZIP 时间戳和 hash；
 - 只有用户显式提供的 `--server-jar` 会被执行，必须视为受信任程序。
+- Web 上传执行 `Content-Length` 和流式硬上限，净化文件名，并为每个 UUID 作业创建隔离目录；
+- Web 转换在独立 CLI JVM 中运行，并限制并发；终止任务时会终止该 CLI 进程及其后代；
+- Web 默认仅监听 `127.0.0.1`，并以 HTTP `Host` 白名单降低 DNS rebinding 风险；白名单不替代身份验证，不能因此被视为可直接公开托管。
 
 报告和日志可能包含输入名称及本机绝对路径。公开提交 Issue 前请先检查并脱敏；也请确认你有权分享输入 Mod、日志和转换后资产。
 
@@ -321,6 +356,7 @@ CLI 退出码：
 | `bridge-converter` | 安全读取、输入识别、转换规划、命名空间、资产检查、打包 |
 | `bridge-target-1597` | v159.7 结构检查与 B480 隔离验证 |
 | `bridge-cli` | Picocli 命令、日志、报告合并和退出码 |
+| `bridge-web` | 本地 HTTP API、任务队列、CLI 子进程隔离、SSE 日志和嵌入式 Web UI |
 
 运行测试：
 

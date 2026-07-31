@@ -1,6 +1,6 @@
 # 测试与回归语料
 
-最后更新：2026-07-30 06:04（Asia/Shanghai）
+最后更新：2026-08-01（Asia/Shanghai）
 
 ## 测试原则
 
@@ -14,6 +14,8 @@
 
 前四层不能替代第五层。特别是 Headless **无法完整验证贴图、atlas region、generated hash、Draw/Effect 或音频解码/播放**。
 此外，普通 Server 冷启动中的 `Loaded N data asset files.` 只是文件发现，不代表 `DataPatcher.apply`。
+
+Web UI/API 测试是与上述五层正交的交付层测试：它验证上传、队列、取消、日志和下载没有改变 CLI 语义，但不会新增第六种“DP 可用性验证”。Web 作业显示 `succeeded` 时，转换报告仍可能是 `PARTIAL`。
 
 任何结果在 Desktop 地图导入未完成前都应保持 `PARTIAL`，不能描述为最终兼容。
 
@@ -39,6 +41,12 @@
 .\scripts\gradle.ps1 :bridge-model:test :bridge-target-api:test :bridge-target-1597:test :bridge-converter:test :bridge-java-static:test --no-build-cache --no-daemon
 ```
 
+Web 模块测试：
+
+```powershell
+.\scripts\gradle.ps1 :bridge-web:test --no-build-cache --no-daemon
+```
+
 不要在本机直接以 `gradlew.bat test` 作为首选，因为 Gradle Test Worker 的 classpath argfile 在中文路径下曾发生编码损坏。
 
 当前测试数量：
@@ -48,9 +56,10 @@
 | `bridge-model` | 5 | 通过 |
 | `bridge-target-api` | 1 | 通过 |
 | `bridge-target-1597` | 7 | 通过 |
-| `bridge-converter` | 15 | 通过 |
+| `bridge-converter` | 18 | 通过 |
 | `bridge-java-static` | 22 | 通过 |
-| 合计 | 50 | 通过 |
+| `bridge-web` | 6 | 通过 |
+| 合计 | 59 | 通过 |
 
 当前覆盖：
 
@@ -71,6 +80,7 @@
 - 自定义 Block/Bullet/Effect 降级、v159.7 不接受字段移除和逐项诊断；
 - 固定目标 v159.7 原版对象快照（当前为 tsunami-slag Bullet）与不执行输入代码的约束。
 - 音频文件头检测、逐文件 `AUDIO_CONTAINER_EXTENSION_MISMATCH` warning，以及保持原名/字节、不自动转码。
+- Web 健康检查、静态页面、未允许 Host 与跨站状态修改拒绝；真实 multipart 上传后启动隔离 CLI，并读取结果 ZIP、报告和日志归档；准备目录/日志失败必须进入终态，上传预约创建失败会回滚容量；运行中的结果产物不可提前下载；取消运行中任务会终止 CLI 及子进程，取消后仅提供已完成的日志归档；并发 SSE 事件序号保持严格单调。
 
 ## CLI 基本命令
 
@@ -357,6 +367,103 @@ Headless apply 通过只证明 B480 parser/DataPatcher 已接受并注册数据�
 - Weapon/Bullet/Effect/Draw 可视与手感正确；
 - 工厂生产、Consume、AI、状态和天气实际行为正确；
 - 目标地图在多人服务器中可玩。
+
+## Web UI / HTTP API 验收
+
+Web 验收的目标是证明“同一 CLI 能被安全、可观察地编排”，而不是重新判断转换语义。至少覆盖以下四组测试。
+
+### 1. 自动化接口测试
+
+现有 `bridge-web` 集成测试使用临时工作目录、随机回环端口和仓库内自建小语料，并真正启动隔离 CLI；不依赖 Desktop、外部 Mod 或公网。后续队列/取消等专项测试可使用可控的假进程入口。完整最低断言：
+
+- `GET /api/health` 返回成功且 Content-Type 正确；
+- 默认回环 Host 可访问；未列入白名单的 Host 返回 `421 host_not_allowed`，监听通配地址不会隐式放行任意 Host；
+- `POST /api/jobs` 接受规范 multipart 字段 `file`（兼容别名 `mod`），返回 `201` 和 UUID；
+- 缺少文件、空文件、非法 multipart 和超上限被拒绝；路径型、控制字符或超长文件名被净化为安全叶文件名；
+- 同一任务依次出现合法状态，不允许终态回到 `running`；
+- 并发上限为 1 时第二个任务保持 `queued`，首个完成后才启动；
+- 取消 queued 任务不会启动 CLI；取消 running 任务会结束进程及其后代并进入 `cancelled`；
+- stdout/stderr 被合并、按序落盘，并可通过 SSE 收到；
+- SSE 至少包含初始 snapshot 和终态，客户端断开不会取消任务；
+- 成功任务的 `/download/result`、`/download/logs`、`/report` 返回正确内容和安全文件名；
+- 作业仍在 `queued` / `running` 时，即使工作目录中已出现 ZIP，也不允许提前下载为最终结果；
+- 准备作业目录或创建日志失败时，任务必须进入 `failed` 终态，不得永久停留在 `running`；
+- 未生成对应产物时下载端点返回明确的非成功状态，而不是空的 200 文件；
+- 未知 UUID、已清理任务及非法路径返回 404/400，不泄漏宿主机绝对路径；
+- 清理只删除专用工作目录中的过期 UUID 作业，不越界删除。
+
+### 2. 本地 API smoke test
+
+先构建，并在终端 A 前台启动：
+
+```powershell
+.\scripts\gradle.ps1 :bridge-web:installDist
+& ".\bridge-web\build\install\mod-dp-bridge-web\bin\mod-dp-bridge-web.bat"
+```
+
+在终端 B 执行健康检查：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/api/health
+```
+
+创建任务并轮询（`fixtures` 中应选择许可允许提交且能快速完成的 ZIP 语料）：
+
+```powershell
+$response = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8080/api/jobs `
+  -Form @{ file = Get-Item ".\path\to\fixture.zip" }
+
+$id = $response.id
+do {
+  Start-Sleep -Milliseconds 250
+  $job = Invoke-RestMethod "http://127.0.0.1:8080/api/jobs/$id"
+  $job.status
+} while ($job.status -in @("queued", "running"))
+```
+
+成功后检查：
+
+```powershell
+Invoke-WebRequest "http://127.0.0.1:8080/api/jobs/$id/download/result" -OutFile ".\web-result.zip"
+Invoke-WebRequest "http://127.0.0.1:8080/api/jobs/$id/download/logs" -OutFile ".\web-logs.zip"
+Invoke-WebRequest "http://127.0.0.1:8080/api/jobs/$id/report" -OutFile ".\web-report.json"
+```
+
+测试完成后回到终端 A 按 `Ctrl+C`，确认 Web 进程及其仍在运行的转换子进程均已退出。
+
+不要把上述 smoke test 的 Web `succeeded` 状态写成 Desktop 已通过；继续校验 ZIP hash、报告状态和人工地图导入。
+
+### 3. 浏览器人工测试
+
+在 Chromium/Firefox 至少各完成一次：
+
+1. 点击选择文件和拖拽上传都能正确显示文件名与大小；
+2. 未选择文件时不能开始，上传期间不会重复提交；
+3. 运行后状态、进度和终端日志持续更新，长行、中文、ANSI/控制字符不会破坏页面；
+4. 日志区域可滚动，自动跟随不会阻止用户向上阅读历史；
+5. 终止按钮只在可取消状态启用，确认后任务最终变为 `cancelled`；
+6. 转换成功后 DP、全部日志和原始报告下载可用；
+7. 转换完成、降级、排除、不支持和失败项数字与 `report.json` 一致；
+8. 详细分组默认折叠，展开后原因和诊断码可读；
+9. CLI 失败、浏览器 SSE 断线、报告缺失和下载失败都有明确提示；
+10. 刷新页面不会终止服务端正在运行的 CLI；重新连接后至少能查询最终状态和下载持久日志。
+
+同时检查小屏幕下的基本可用性、键盘焦点、按钮禁用状态和文本对比度。Mindustry 风格不能以牺牲错误可读性或可访问性为代价。
+
+### 4. 安全与资源测试
+
+- 分别测试无 `Content-Length` 的流式超限、伪造较小 `Content-Length` 后实际超限和代理层超限；
+- 上传文件名包含 `..`、绝对路径、Windows 盘符、控制字符、同形 Unicode 和超长名称；
+- 上传 ZIP Slip、过多 entry、高压缩比和展开超限语料，确认 Web 与 CLI 两层均拒绝；
+- 同时提交超过并发上限的任务，确认不会无限创建运行进程；
+- 运行任务中触发取消，确认 Java/验证子进程没有遗留；
+- 将工作目录权限设为不可写、磁盘空间不足或 CLI classpath 错误，确认任务失败且日志不泄漏敏感环境变量；
+- 到期清理前后检查任务、上传、日志、报告和产物的生命周期一致；
+- 从另一台主机确认默认 `127.0.0.1` 不可访问；远程部署时验证反向代理认证、HTTPS、上传限制、SSE 不缓冲和超时。
+
+公开部署前还必须人工审阅日志中的本机路径、输入名称和第三方资产许可证。完整安全部署建议见 `WEB_UI.md`。
 
 ## 已完成的 Desktop 实测
 

@@ -1,10 +1,10 @@
 # 项目进度
 
-最后更新：2026-07-30 08:02（Asia/Shanghai）
+最后更新：2026-08-01（Asia/Shanghai）
 
 ## 当前结论
 
-项目已实现可运行的无前端 CLI，并完成高价值 Java Mod 样本 Saturation Firepower 的确定性 Java AST 静态转换。转换器不编译、不加载、不反射、不执行输入 Mod 代码，而是把可由 Mindustry v159.7/B480 Data Assets 表达的对象图导出为 HJSON，并对不能等价表达的行为逐项降级和报告。
+项目已实现可运行的 CLI 和本地 Web UI，并完成高价值 Java Mod 样本 Saturation Firepower 的确定性 Java AST 静态转换。转换器不编译、不加载、不反射、不执行输入 Mod 代码，而是把可由 Mindustry v159.7/B480 Data Assets 表达的对象图导出为 HJSON，并对不能等价表达的行为逐项降级和报告。Web 层只负责任务编排和可视化，不复制转换逻辑。
 
 ## B480 Desktop 导入已通过；描边/组合图修复候选待复测，退出崩溃属于客户端上游
 
@@ -53,6 +53,15 @@ SHA-256：
   - `logs/data-patch-apply.log`
   - `logs/server-asset-discovery.log`
 - ZIP 使用稳定条目顺序和时间戳；最终 Saturation 产物已复打包验证 SHA-256 一致。
+
+### Web UI 与 HTTP API
+
+- `bridge-web` 提供原生 HTML/CSS/JavaScript 的 Mindustry 简约风格界面，无 Node.js 构建步骤。
+- 支持拖拽/选择 `.zip`、`.jar`、`.hjson`、`.json`、`.json5`，目录需先压缩。
+- 支持创建/排队/终止任务、SSE 实时终端日志、阶段进度、结果 ZIP/全部日志下载，以及默认折叠的完成/缺失项报告。
+- 每个任务使用 UUID 隔离目录和独立 CLI JVM；stdout/stderr 合并落盘，任务并发、排队、上传大小、展开大小、条目数、SSE 连接和保留时长均可配置；SSE 连接数默认 32，硬上限 120。
+- API 包含健康检查、任务列表/快照、上传、取消、SSE、原始报告及 canonical 下载端点；详见 `docs/WEB_UI.md`。
+- 默认仅监听 `127.0.0.1:8080`，并有上传流式硬上限、文件名净化、HTTP `Host` 白名单/DNS rebinding 防护、Origin/Host 同源检查、CSP 和进程树终止。默认允许 `localhost` / `127.0.0.1` / `::1`，非通配监听地址自动加入；绑定 `0.0.0.0` / `::` 远程访问必须用 `MOD_DP_BRIDGE_ALLOWED_HOSTS` 显式列出域名/IP。该白名单不替代认证；当前没有内置认证、授权、租户隔离、分布式队列或对象存储，不能直接裸露到公网。
 
 ### 声明式 Mod、已有 DP 与 Legacy CP
 
@@ -112,7 +121,7 @@ SHA-256：
 
 ### 测试
 
-当前测试汇总：53 项全部通过，0 failed，0 skipped。
+当前测试汇总：59 项全部通过，0 failed，0 skipped。
 
 | 模块 | 测试数 |
 |---|---:|
@@ -121,7 +130,8 @@ SHA-256：
 | `bridge-target-1597` | 7 |
 | `bridge-converter` | 18 |
 | `bridge-java-static` | 22 |
-| **合计** | **53** |
+| `bridge-web` | 6 |
+| **合计** | **59** |
 
 ### Saturation Firepower 最终转换
 
@@ -221,7 +231,7 @@ Saturation 的 63 个 degraded Content 已生成并被 B480 接受，但仍含�
 7. **固定目标快照有版本绑定**：`tsunami + slag` 快照只对当前 v159.7/B480 目标负责，升级版本必须重新核对源码。
 8. **146–158 无独立运行器**：旧 Mod 只做尽力静态迁移。
 9. **仅编译 JAR 的 Java 逻辑未反编译**：Java AST exporter 要求 `.java` 源码。只含 `.class` 的发布 JAR 可迁移资产/声明式内容，但其字节码玩法逻辑会明确报 error；当前高价值 Saturation 验证使用的是完整源码目录。
-10. **网站未实现**：当前结果是 CLI/开源主干，网站仍为可选后续项。
+10. **Web UI 仍是本地单实例工具**：已实现上传、队列、终止、实时日志、下载、报告和 Host 白名单/DNS rebinding 防护，但 Host 白名单不是认证。当前没有账号/权限、跨实例持久队列、对象存储、病毒扫描或公网部署默认值；远程部署必须补 TLS、认证、授权、限流和资源隔离，并显式配置允许的域名/IP。
 
 ## 当前硬成功标准
 
@@ -245,4 +255,5 @@ Saturation 的 63 个 degraded Content 已生成并被 B480 接受，但仍含�
 4. 检查所有关键贴图、Effect、DrawPart 和 10 个音频资产；特别验证 3 个 MP3 容器和 2 个 WAV 容器使用 `.ogg` 扩展名时，目标 Desktop 是否仍能正确解码和播放。
 5. 保存地图、完全退出、重启并重新打开。
 6. 导出测试地图，由匹配 B480 服务器实际加载；保留客户端/服务器日志、地图和截图/视频。
-7. 根据真实测试结果再决定是否补规则、处理版本快照或进入网站化阶段。
+7. 根据真实测试结果继续补转换规则或处理版本快照；Web UI 的使用/API/安全边界以 `docs/WEB_UI.md` 为准。
+8. 如决定远程部署，再单独设计认证授权、持久任务索引、对象存储、配额和隔离，不把这些功能侵入转换核心。

@@ -25,4 +25,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Build and test
-        run: ./gradlew build :bridge-cli:installDist :bridge-cli:distZip --no-daemon
+        run: >-
+          ./gradlew build
+          :bridge-cli:installDist :bridge-cli:distZip
+          :bridge-web:installDist :bridge-web:distZip
+          --no-daemon

@@ -1,12 +1,13 @@
 # 持久上下文
 
-最后更新：2026-07-30 08:02（Asia/Shanghai）
+最后更新：2026-08-01（Asia/Shanghai）
 
 本文件用于在上下文压缩、新会话或任务交接后恢复项目约束和当前事实。继续开发前，还应阅读：
 
 - `docs/PROJECT_STATUS.md`
 - `docs/ARCHITECTURE.md`
 - `docs/TESTING.md`
+- `docs/WEB_UI.md`
 - `docs/DATA_PATCH_APPLY_VALIDATION.md`
 - `docs/JAVA_STATIC_SATURATION_BASELINE.md`
 - `docs/SATURATION_FIREPOWER_ASSESSMENT.md`
@@ -50,7 +51,7 @@ SHA-256：
 
 ## 用户确认的目标
 
-- 优先完成无前端、可开源的转换工具；网站部署仅为可选后续目标。
+- 已优先完成可开源的转换核心；当前又实现了本地 Web UI。公网网站部署仍是可选后续目标，不能牺牲 CLI 确定性和安全边界。
 - 将 Mindustry 146+ Mod 尽力静态迁移到 v159.7/B480 Data Pack。
 - 产品主干不得依赖 LLM Agent，转换必须确定、可审计、可复现。
 - 不编译、不加载、不反射、不执行输入 Mod 的 Java/JS/Kotlin/Gradle/Maven 代码。
@@ -60,6 +61,17 @@ SHA-256：
 - 禁止静默丢弃；未转换、降级、排除、不支持和失败项必须进入报告并可追踪到源码位置。
 - 输出 DP ZIP、展开的 `server-assets/`、完整日志、JSON/Markdown 报告。
 - 最终产物需要由真实 v159.7 Desktop 地图编辑器和匹配 B480 服务器验证。
+
+## Web UI 当前状态与边界
+
+- `bridge-web` 已实现本地 Web UI 和 HTTP API，前端为嵌入 classpath 的原生 HTML/CSS/JavaScript，无独立 Node.js 工程。
+- 网页支持拖拽/选择 `.zip`、`.jar`、`.hjson`、`.json`、`.json5`；普通目录需先压缩，CLI 仍可直接读取目录。
+- 必要功能已包含：开始/终止转换、排队、阶段进度、SSE 实时终端日志、DP ZIP/全部日志下载、默认折叠的完成/降级/排除/不支持/失败报告。
+- Web 不直接调用转换器内部 API，而是每任务启动独立 `bridge-cli` JVM；因此 CLI 退出码、`report.json` 和落盘日志仍是事实来源。
+- 默认地址为 `127.0.0.1:8080`；工作目录默认 `work/web-jobs`；默认上传 64 MiB、并发 1、排队 8、SSE 连接 32（硬上限 120）、保留 24 小时。
+- 安全措施包括 Content-Length 与流式上传上限、文件名净化、UUID 目录、CLI 二次归档检查、HTTP `Host` 白名单/DNS rebinding 防护、Origin/Host 同源检查、CSP、SSE 上限和取消时终止进程树。白名单默认含 `localhost`、`127.0.0.1`、`::1`；非通配监听地址自动加入，`0.0.0.0` / `::` 远程访问则要求 `MOD_DP_BRIDGE_ALLOWED_HOSTS` 显式列出域名/IP。
+- 当前没有认证、授权、用户/租户隔离、分布式队列、对象存储、病毒扫描或任务重启恢复。Host 白名单不替代认证，不能把实例直接裸露到公网；完整环境变量、API 和反向代理要求见 `docs/WEB_UI.md`。
+- Web 作业状态 `succeeded` 只代表 CLI 正常结束，不会把转换报告的 `PARTIAL` 自动升级为最终可用。
 
 ## 硬边界与软边界
 
@@ -116,6 +128,7 @@ SHA-256：
 - HJSON Java
 - kotlinx.serialization
 - JUnit 5
+- JDK 内置 `HttpServer`、Server-Sent Events、原生 HTML/CSS/JavaScript（Web UI）
 - GPLv3
 
 路径含中文，必须优先使用 ASCII Junction 包装脚本：
@@ -134,6 +147,7 @@ SHA-256：
 - `bridge-converter`：安全读取、输入识别、HJSON/CP 解析、Java exporter 接入、命名空间重写、资源检查和打包。
 - `bridge-target-1597`：v159.7 结构验证、正式 DataPatcher apply harness 和服务器文件发现。
 - `bridge-cli`：命令行、日志、报告合并、失败报告和可选 B480 验证。
+- `bridge-web`：HTTP API、上传与任务队列、独立 CLI 子进程、SSE、产物/日志下载和嵌入式 Web UI。
 
 ## 当前转换行为
 
@@ -201,6 +215,8 @@ Content 结果：
 
 普通服务器日志 `Loaded N data asset files.` 只表示发现文件，不能冒充 DataPatcher apply 或地图加载成功。
 
+Web API 的 HTTP 2xx、健康检查或作业 `succeeded` 也不能冒充 Desktop/服务器地图验证；必须继续查看 `report.json` 的转换状态和 validation stages。
+
 ## 当前最终自动化事实
 
 最新 Saturation 产物：
@@ -244,13 +260,14 @@ Java 静态导出关键事实：
 - 10 个音频资产的文件名均以 `.ogg` 结尾，但文件头审计为 5 个 OGG、3 个 MP3 容器、2 个 WAV 容器；5 个不匹配文件现在逐项报告 `AUDIO_CONTAINER_EXTENSION_MISMATCH`，输出仍保持原名/字节且不转码，Desktop 解码和播放待验证。
 - 额外本机 QA：原始 1616 个 PNG 全部通过 Pillow `verify()`，10 个音频全部可由 PyAV 解码至少一帧；最终 ZIP 共含 2264 个 PNG 条目，其中新增 413 张离线组合/描边图。该检查不代表 Mindustry Desktop atlas/Arc/SoLoud 已全部通过。v159.7 源码中 `DataAudioLoader` 对内容寻址、无扩展名的缓存文件调用 `Sound.createStream` / `Music.create`，Java 层不会仅根据原 `.ogg` 后缀选择解码器。
 
-当前测试汇总为 53 项全部通过：
+当前测试汇总为 59 项全部通过：
 
 - `bridge-model`：5
 - `bridge-target-api`：1
 - `bridge-target-1597`：7
 - `bridge-converter`：18
 - `bridge-java-static`：22
+- `bridge-web`：6（Host/跨站拒绝与静态页面；真实 multipart → 独立 CLI → 结果、报告、日志端到端；准备失败必须进入终态且运行中产物不可提前下载；取消运行中任务会终止进程树，并且只开放已完成的日志归档；上传预约失败会回滚容量；并发 SSE 事件序号保持单调）
 
 ## 已有真实 Desktop 事实
 
@@ -278,8 +295,9 @@ Java 静态导出关键事实：
 ## 恢复开发时的优先顺序
 
 1. 查看当前源码和 `git status`，不要处理父仓库无关修改。
-2. 使用 `scripts/gradle.ps1` 运行完整构建，并确认 53 项测试无失败。
+2. 使用 `scripts/gradle.ps1` 运行完整构建，并确认 59 项测试无失败。
 3. 以 `work/saturation-outlinefix-final-20260730-075936/report.json`、`report.md` 和验证日志作为当前基线。
 4. 审查 63 个 degraded Content，区分仍可新增确定性映射的遗漏与 DP 运行时本就无法表达的 Java 行为；固定原版对象快照必须绑定 v159.7 并可审计。
 5. 需要判断贴图、音效、地图持久化或玩法时停止静态推测，按 `docs/TESTING.md` 交给真实 v159.7 Desktop 测试。
 6. Desktop 通过后保存并导出测试地图，再由匹配 B480 服务器实际加载该地图；在此之前 `SERVER_LOAD` 必须保持 `NOT_RUN`。
+7. 修改或部署 Web UI 前阅读 `docs/WEB_UI.md`；保持默认回环监听，远程访问必须配置 `MOD_DP_BRIDGE_ALLOWED_HOSTS`，并通过带 TLS、认证、请求限制且保留原始 `Host` 的反向代理。

@@ -21,4 +21,5 @@ include(
     "bridge-converter",
     "bridge-target-1597",
     "bridge-cli",
+    "bridge-web",
 )

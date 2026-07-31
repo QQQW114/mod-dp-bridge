@@ -56,11 +56,17 @@ bridge-target-1597
 
 bridge-cli
   命令行、日志、报告合并、退出码、失败文件
+
+bridge-web
+  本地 HTTP API、上传限制、任务队列、独立 CLI 子进程、SSE 日志、静态 Web UI
 ```
 
 ## 转换流水线
 
 ```text
+CLI 本地路径，或 Web multipart 上传
+        |
+        v
 目录 / ZIP / JAR / JSON / HJSON / JSON5
         |
         v
@@ -122,6 +128,8 @@ Mindustry1597StructuralValidator
 仍需真实 Desktop 地图导入、音画和玩法验证，
 以及服务器实际加载携带 DP 的地图/存档
 ```
+
+Web UI 不进入转换器内部，也不拥有第二套转换语义。`bridge-web` 把上传保存为隔离输入文件，然后启动与命令行相同的 `bridge-cli` 入口；因此 CLI 报告、退出码和安全读取规则仍是转换事实来源。
 
 ## 输入读取与安全模型
 
@@ -315,6 +323,40 @@ Mindustry 的 ContentAsset/generated 资源可能使用内容文本的精确哈�
 
 二进制资产在没有路径重写时保持字节不变。普通 Mod 文本会规范化；已有 DP content/patch 文本按前述策略保持原字节。
 
+## Web 任务编排
+
+`bridge-web` 是转换核心之外的薄适配层：
+
+```text
+Browser
+  |  multipart upload / JSON / SSE / download
+  v
+bridge-web HTTP server
+  |-- static classpath UI
+  |-- Host allowlist / DNS rebinding guard
+  |-- upload byte limit + filename normalization
+  |-- UUID job directory + bounded queue
+  |-- retention cleanup
+  |
+  +---- one isolated JVM process per running job
+              |
+              v
+          bridge-cli convert
+              |
+              +-- stdout/stderr -> terminal log + SSE
+              +-- report.json/report.md/logs/DP ZIP
+```
+
+设计上不允许 Web 端直接调用输入 Mod，也不允许浏览器参数拼接任意 shell 命令。上传文件只会保存到 UUID 隔离目录；CLI 参数以进程参数列表传递，转换器随后再次执行 ZIP Slip、条目数、展开大小、压缩比和路径检查。
+
+作业状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled`。并发上限默认是 1，其余任务排队。运行中取消会终止对应 CLI 进程及其后代，避免只结束包装进程而遗留验证 JVM；已写入日志不是事务的一部分，会保留下来供审计。
+
+stdout/stderr 合并后同时写入持久文件并推送 SSE。SSE 只负责低延迟显示，不是日志真相：客户端重连后先读取作业快照，最终以下载的日志归档和 CLI 生成报告为准。报告摘要由 `report.json` 投影生成，不能根据终端文本猜测 Content 成功率。SSE 连接数默认为 32，并在配置解析时硬限制为最多 120，以保留用于上传、状态和下载的 HTTP worker。
+
+Web 服务默认绑定 `127.0.0.1:8080`。每个请求的 HTTP `Host` 都必须命中白名单：默认含 `localhost`、`127.0.0.1`、`::1`，具体非通配监听地址会自动加入；监听 `0.0.0.0` / `::` 时则必须用 `MOD_DP_BRIDGE_ALLOWED_HOSTS` 显式列出对外域名/IP。未命中时返回 `421 host_not_allowed`，以降低 DNS rebinding 风险；白名单不是身份认证。
+
+当前不提供认证、授权、租户隔离或分布式调度；切换到非回环监听不等于安全部署。远程部署必须由反向代理提供 TLS、身份验证、请求限制和 SSE 代理配置，保留浏览器原始 `Host`，并同步配置允许的域名/IP。完整 API、环境变量和部署边界见 `WEB_UI.md`。
+
 ## 报告模型
 
 `ConversionReport` 是 JSON 的机器真相，Markdown 是人类可读视图。包含：
@@ -400,6 +442,8 @@ DataPatcher apply，不更新 RUNTIME/SERVER_LOAD 为 PASSED。
 - 结构或 DataPatcher apply 验证失败：最终报告为 `REJECTED`，CLI 返回非零。
 - 仅 Headless 通过不得升级为 SUCCESS。
 - SUCCESS 只能保留给全部硬验证完成且没有未接受错误的未来流程。
+- Web 作业的 `succeeded` 只表示 CLI 正常结束并生成结果，不覆盖报告中的 `PARTIAL`/`REJECTED` 等转换语义。
+- HTTP 2xx、健康检查和 SSE 正常连接均不是 DP 可加载性的证据。
 
 ## 后续扩展点
 
@@ -407,4 +451,4 @@ DataPatcher apply，不更新 RUNTIME/SERVER_LOAD 为 PASSED。
 - Desktop Worker：真实导入地图、生成/验证 atlas 和 generated 资源。
 - 扩充确定性 JavaParser AST 映射、目标版本 snapshot 和诊断，不把执行输入 Java 或引入 Agent 作为主干兼容方案。
 - 多目标版本适配器：需要独立的目标源码、ClassMap 和运行时验证，不能把 v159.7 规则直接宣称兼容 146–158。
-- 网站：应复用现有 CLI/报告模型，放在转换核心稳定之后。
+- Web 部署增强：可选认证/授权、持久任务索引、对象存储、跨实例队列和可观测性；这些不能侵入或复制转换核心。

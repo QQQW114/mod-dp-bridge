@@ -53,7 +53,8 @@ copyrightable source-derived compatibility data.
 
 Gradle resolves the following libraries from Maven Central. They are not
 vendored as source in this repository, but they are included as JAR files in a
-standard `bridge-cli` application distribution.
+standard `bridge-cli` application distribution and in the `bridge-web`
+distribution that embeds the CLI runtime.
 
 | Component | Version | License | Upstream |
 |---|---:|---|---|
@@ -81,8 +82,8 @@ the JARs.
 The repository includes the Gradle Wrapper 9.2.1 (`gradle-wrapper.jar` and
 launcher scripts), licensed under Apache-2.0. The build also resolves the
 Kotlin Gradle plugins under Apache-2.0 and JUnit Jupiter 5.11.4 under
-EPL-2.0. Test-only dependencies are not included in the normal CLI runtime
-distribution.
+EPL-2.0. Test-only dependencies are not included in normal production
+distributions.
 
 - Gradle: <https://github.com/gradle/gradle>
 - Kotlin: <https://github.com/JetBrains/kotlin>
