@@ -68,11 +68,14 @@ distribution that embeds the CLI runtime.
 | Apache Commons IO | 2.16.1 | Apache-2.0 | <https://commons.apache.org/proper/commons-io/> |
 | Apache Commons Lang | 3.16.0 | Apache-2.0 | <https://commons.apache.org/proper/commons-lang/> |
 | JavaParser | 3.26.3 | Apache-2.0 **or** LGPL-3.0; this project uses the Apache-2.0 option | <https://github.com/javaparser/javaparser> |
+| ASM | 9.7.1 | BSD-3-Clause | <https://asm.ow2.io/> |
 
 The Apache License 2.0 text is reproduced in
 [`third-party/licenses/Apache-2.0.txt`](third-party/licenses/Apache-2.0.txt).
 The Hjson MIT notice is reproduced in
 [`third-party/licenses/Hjson-MIT.txt`](third-party/licenses/Hjson-MIT.txt).
+The ASM BSD 3-Clause notice is reproduced in
+[`third-party/licenses/ASM-BSD-3-Clause.txt`](third-party/licenses/ASM-BSD-3-Clause.txt).
 Apache Commons JARs additionally contain their own `META-INF/LICENSE.txt` and
 `META-INF/NOTICE.txt`; those entries must remain intact when redistributing
 the JARs.
