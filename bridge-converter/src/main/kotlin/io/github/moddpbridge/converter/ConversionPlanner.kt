@@ -113,6 +113,19 @@ internal object ConversionPlanner {
         DetectedSourceKind.DATA_PACK -> planAssetTree(snapshot, detection, staticExport, diagnostics, logger)
     }
 
+    /** Applies the same source-Mod path rule used while scanning an ordinary sprites tree. */
+    internal fun applyPreparedModAssetPathRules(
+        outputPath: String,
+        modNamespace: String?,
+    ): Pair<String, String?> {
+        val normalized = outputPath.replace('\\', '/').trim('/')
+        if (!normalized.substringBefore('/').equals("sprites", ignoreCase = true)) {
+            return normalized to null
+        }
+        val rewritten = rewriteGeneratedSpritePath(normalized, modNamespace)
+        return rewritten.path to rewritten.reason
+    }
+
     private fun planLegacyCp(
         snapshot: SourceSnapshot,
         detection: SourceDetection,

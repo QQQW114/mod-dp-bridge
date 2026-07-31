@@ -65,10 +65,10 @@ Validated on 2026-08-01 with the official v159.7 release server:
 
 ```text
 Server:
-C:\Users\qw114\Desktop\other\mdt保留\mod-dp-bridge\work\mindustry-v159.7-server-release.jar
+<repository-root>\work\mindustry-v159.7-server-release.jar
 
 Mod:
-C:\Users\qw114\Downloads\NewHorizonMod.2.2.1.jar
+<local-downloads>\NewHorizonMod.2.2.1.jar
 ```
 
 The server JAR reports `build=159.7`, `type=official`, `modifier=release`, and has SHA-256

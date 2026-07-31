@@ -33,7 +33,7 @@ import picocli.CommandLine.Parameters
     mixinStandardHelpOptions = true,
     version = ["mod-dp-bridge 0.1.0-SNAPSHOT"],
     description = ["Convert Mindustry mods/CP/data packs into v159.7 Data Assets."],
-    subcommands = [ConvertCommand::class],
+    subcommands = [ConvertCommand::class, RuntimeConvertCommand::class],
 )
 class RootCommand : Runnable {
     override fun run() {
@@ -297,7 +297,7 @@ class ConvertCommand : Callable<Int> {
     }
 }
 
-private fun mergeStages(
+internal fun mergeStages(
     original: List<ValidationStageResult>,
     updates: List<ValidationStageResult>,
 ): List<ValidationStageResult> {
@@ -316,13 +316,13 @@ private fun mergeStages(
     return ValidationStage.entries.mapNotNull(byStage::get)
 }
 
-private fun ReportSummary.withDiagnosticCounts(diagnostics: List<Diagnostic>): ReportSummary = copy(
+internal fun ReportSummary.withDiagnosticCounts(diagnostics: List<Diagnostic>): ReportSummary = copy(
     infoCount = diagnostics.count { it.severity == DiagnosticSeverity.INFO },
     warningCount = diagnostics.count { it.severity == DiagnosticSeverity.WARNING },
     errorCount = diagnostics.count { it.severity == DiagnosticSeverity.ERROR },
 )
 
-private fun BridgeLogger.diagnostic(diagnostic: Diagnostic) {
+internal fun BridgeLogger.diagnostic(diagnostic: Diagnostic) {
     val text = buildString {
         append("${diagnostic.code}: ${diagnostic.message}")
         diagnostic.location?.let { location ->
@@ -341,9 +341,9 @@ private fun BridgeLogger.diagnostic(diagnostic: Diagnostic) {
     }
 }
 
-private fun String.forLog(): String = lineSequence().joinToString("\\n") { it.trimEnd() }
+internal fun String.forLog(): String = lineSequence().joinToString("\\n") { it.trimEnd() }
 
-private fun writeFailureFiles(
+internal fun writeFailureFiles(
     outputDirectory: Path,
     input: Path,
     error: ConversionException,
@@ -378,7 +378,7 @@ private fun writeFailureFiles(
     logger.info("Failure details written under $outputDirectory")
 }
 
-private fun writeUnexpectedFailure(outputDirectory: Path, input: Path, error: Throwable) {
+internal fun writeUnexpectedFailure(outputDirectory: Path, input: Path, error: Throwable) {
     Files.writeString(
         outputDirectory.resolve("failure-report.txt"),
         "Input: ${input.absolutePathString()}\n\n${error.stackTraceToString()}",

@@ -1,0 +1,987 @@
+package bridgeprobe;
+
+import arc.graphics.Color;
+import arc.struct.ObjectMap;
+import arc.struct.Seq;
+import arc.util.serialization.Json;
+import arc.util.serialization.Json.FieldMetadata;
+import mindustry.Vars;
+import mindustry.content.Fx;
+import mindustry.core.ContentLoader;
+import mindustry.ctype.Content;
+import mindustry.ctype.ContentType;
+import mindustry.ctype.MappableContent;
+import mindustry.entities.Effect;
+import mindustry.mod.ClassMap;
+import mindustry.mod.data.ContentAsset;
+import mindustry.type.Item;
+import mindustry.type.Liquid;
+import mindustry.type.StatusEffect;
+import mindustry.type.UnitType;
+import mindustry.type.Weather;
+import mindustry.world.Block;
+
+import java.io.BufferedWriter;
+import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Compiled against the exact user-supplied Mindustry JAR.
+ *
+     * <p>This encoder reads either a small fixed target-owned field whitelist, or (for UnitType and
+     * Block roots) a pristine target-owned field schema frozen before Mod content loading for the
+     * selected canonical ClassMap fallback. It never discovers fields from a Mod runtime subclass and never calls Mod
+ * getters, {@code equals()}, {@code toString()} or arbitrary serializers. Unsupported objects are
+ * represented as explicit opaque values instead of being recursively traversed.</p>
+ */
+final class RuntimeSnapshotSupport {
+    private static final long DEFAULT_MAX_TOTAL_SNAPSHOT_BYTES = 256L * 1024L * 1024L;
+    private static final int MAX_ROOT_SNAPSHOT_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_DECLARATION_ROWS = 1_024;
+    private static final int MAX_METADATA_TEXT = 1_024;
+    private static final int MAX_ANCESTRY_DEPTH = 256;
+    private static final int MAX_CONTAINER_ITEMS = 4_096;
+    private static final long maxTotalSnapshotBytes = positiveLongProperty(
+        "moddpbridge.runtimeMaxSnapshotBytes",
+        DEFAULT_MAX_TOTAL_SNAPSHOT_BYTES
+    );
+
+    private static final List<String> ITEM_FIELDS = List.of(
+        "color",
+        "explosiveness",
+        "flammability",
+        "radioactivity",
+        "charge",
+        "hardness",
+        "cost",
+        "healthScaling",
+        "lowPriority",
+        "frames",
+        "transitionFrames",
+        "frameTime",
+        "buildable",
+        "hidden"
+    );
+
+    private static final List<String> LIQUID_FIELDS = List.of(
+        "gas",
+        "color",
+        "gasColor",
+        "barColor",
+        "lightColor",
+        "flammability",
+        "temperature",
+        "heatCapacity",
+        "viscosity",
+        "explosiveness",
+        "blockReactive",
+        "coolant",
+        "moveThroughBlocks",
+        "incinerable",
+        "effect",
+        "particleEffect",
+        "particleSpacing",
+        "boilPoint",
+        "capPuddles",
+        "vaporEffect",
+        "hidden",
+        "canStayOn"
+    );
+
+    private static final List<String> CELL_LIQUID_FIELDS = List.of(
+        "colorFrom",
+        "colorTo",
+        "cells",
+        "spreadTarget",
+        "maxSpread",
+        "spreadConversion",
+        "spreadDamage",
+        "removeScaling"
+    );
+
+    private static final List<String> STATUS_FIELDS = List.of(
+        "damageMultiplier",
+        "healthMultiplier",
+        "speedMultiplier",
+        "reloadMultiplier",
+        "buildSpeedMultiplier",
+        "dragMultiplier",
+        "transitionDamage",
+        "disarm",
+        "damage",
+        "intervalDamageTime",
+        "intervalDamage",
+        "intervalDamagePierce",
+        "effectChance",
+        "parentizeEffect",
+        "permanent",
+        "reactive",
+        "dynamic",
+        "show",
+        "color",
+        "effect",
+        "applyEffect",
+        "applyExtend",
+        "applyColor",
+        "parentizeApplyEffect",
+        "affinities",
+        "opposites",
+        "outline"
+    );
+
+    /**
+     * Root-level keys consumed by ContentParser before its ordinary readFields pass. They are not
+     * runtime fields that may be copied back verbatim, even if a future target class happens to
+     * declare a field with the same name.
+     */
+    private static final Set<String> COMMON_PARSER_PSEUDO_FIELDS = Set.of(
+        "name",
+        "description",
+        "research",
+        "type"
+    );
+
+    private static final Set<String> UNIT_PARSER_PSEUDO_FIELDS = Set.of(
+        "template",
+        "requirements",
+        "controller",
+        "defaultController",
+        "waves"
+    );
+
+    private static final Set<String> BLOCK_PARSER_PSEUDO_FIELDS = Set.of("consumes");
+
+    private static final Field CONTENT_MAP_FIELD = targetField(ContentLoader.class, "contentMap");
+    private static final Map<Class<?>, String> TARGET_CLASS_NAMES = freezeTargetClassNames();
+    private static final Json TARGET_FIELD_SCHEMA = new Json();
+    private static final IdentityHashMap<Object, StaticRef> EFFECT_REFS = staticRefs(Fx.class, Effect.class);
+    private static long totalSnapshotBytes;
+
+    private RuntimeSnapshotSupport() {
+    }
+
+    /** Forces all trusted metadata and limits to freeze before the input Mod begins loading content. */
+    static void initializeTrustedMetadata() {
+        TARGET_CLASS_NAMES.size();
+        TARGET_FIELD_SCHEMA.getFields(UnitType.class);
+        TARGET_FIELD_SCHEMA.getFields(Block.class);
+    }
+
+    static boolean registryIsEmpty() {
+        for (Seq<?> sequence : contentMap()) {
+            if (sequence.size != 0) return false;
+        }
+        return true;
+    }
+
+    static List<Content> targetContents(String targetMod) {
+        List<Content> result = new ArrayList<>();
+        for (Seq<?> sequence : contentMap()) {
+            for (int index = 0; index < sequence.size; index++) {
+                Content content = contentAt(sequence, index);
+                if (belongsTo(content, targetMod)) result.add(content);
+            }
+        }
+        return result;
+    }
+
+    static int write(Path file, String targetMod, String phase) throws Exception {
+        int count = 0;
+        Files.createDirectories(file.getParent());
+        try (BufferedWriter output = Files.newBufferedWriter(
+            file,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.WRITE
+        )) {
+            for (Seq<?> sequence : contentMap()) {
+                for (int index = 0; index < sequence.size; index++) {
+                    Content content = contentAt(sequence, index);
+                    if (!belongsTo(content, targetMod)) continue;
+                    String type = contentType(content).name();
+                    String name = contentName(content);
+                    String snapshot = snapshot(content, phase);
+                    byte[] snapshotBytes = snapshot.getBytes(StandardCharsets.UTF_8);
+                    if (snapshotBytes.length > MAX_ROOT_SNAPSHOT_BYTES) {
+                        throw new IllegalStateException(
+                            "Runtime snapshot root " + type + "/" + name + " is " + snapshotBytes.length +
+                                " bytes; limit is " + MAX_ROOT_SNAPSHOT_BYTES + "."
+                        );
+                    }
+                    String row = encode(type) + '\t' + encode(name) + '\t' + encode(snapshotBytes) + '\n';
+                    reserveSnapshotBytes(row.length()); // Base64URL rows are ASCII, so chars == UTF-8 bytes.
+                    output.write(row);
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    static String contentKey(Content content) {
+        return contentType(content).name() + "\u0000" + contentName(content);
+    }
+
+    private static String snapshot(Content content, String phase) {
+        Fallback fallback = resolveFallback(content);
+        StringBuilder json = new StringBuilder(8_192);
+        json.append("{\n");
+        property(json, 1, "schemaVersion", "1", true);
+        property(json, 1, "phase", quote(phase), true);
+        property(json, 1, "name", quote(contentName(content)), true);
+        property(json, 1, "contentType", quote(contentType(content).name()), true);
+        property(json, 1, "runtimeClass", quote(content.getClass().getName()), true);
+
+        json.append("  \"classAncestry\": [");
+        List<String> ancestry = ancestry(content.getClass());
+        if (!ancestry.isEmpty()) json.append('\n');
+        for (int index = 0; index < ancestry.size(); index++) {
+            json.append("    ").append(quote(ancestry.get(index)));
+            if (index + 1 < ancestry.size()) json.append(',');
+            json.append('\n');
+        }
+        json.append("  ],\n");
+
+        json.append("  \"sourceClassMapFallback\": {\n");
+        property(json, 2, "parserName", quoteNullable(fallback == null ? null : fallback.parserName()), true);
+        property(
+            json,
+            2,
+            "runtimeClass",
+            quoteNullable(fallback == null ? null : fallback.runtimeClass().getName()),
+            true
+        );
+        property(json, 2, "loadableRoot", Boolean.toString(isLoadable(contentType(content))), false);
+        json.append("  },\n");
+
+        json.append("  \"fields\": {");
+        Map<String, String> fields = captureFields(content, fallback);
+        if (!fields.isEmpty()) json.append('\n');
+        int fieldIndex = 0;
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            json.append("    ").append(quote(entry.getKey())).append(": ").append(entry.getValue());
+            if (++fieldIndex < fields.size()) json.append(',');
+            json.append('\n');
+        }
+        json.append("  },\n");
+
+        stringArray(json, 1, "customFields", customFields(content.getClass(), fallback), true);
+        stringArray(json, 1, "overriddenMethods", overriddenMethods(content.getClass(), fallback), true);
+        stringArray(json, 1, "customOnlyMethods", customOnlyMethods(content.getClass(), fallback), true);
+
+        json.append("  \"declaredLosses\": [");
+        List<String> losses = declaredLosses(content);
+        if (!losses.isEmpty()) json.append('\n');
+        for (int index = 0; index < losses.size(); index++) {
+            json.append("    ").append(losses.get(index));
+            if (index + 1 < losses.size()) json.append(',');
+            json.append('\n');
+        }
+        json.append("  ]\n");
+        json.append('}');
+        return json.toString();
+    }
+
+    private static Map<String, String> captureFields(Content content, Fallback fallback) {
+        Budget budget = new Budget();
+        if (content instanceof Item) {
+            return captureFixedFields(content, Item.class, ITEM_FIELDS, budget);
+        } else if (content instanceof Liquid) {
+            Map<String, String> fields = new LinkedHashMap<>(
+                captureFixedFields(content, Liquid.class, LIQUID_FIELDS, budget)
+            );
+            if (fallback != null && "CellLiquid".equals(fallback.parserName())) {
+                fields.putAll(captureFixedFields(content, fallback.runtimeClass(), CELL_LIQUID_FIELDS, budget));
+            }
+            return fields;
+        } else if (content instanceof StatusEffect) {
+            return captureFixedFields(content, StatusEffect.class, STATUS_FIELDS, budget);
+        } else if (content instanceof UnitType || content instanceof Block) {
+            return captureParserFields(content, fallback);
+        } else {
+            return Map.of();
+        }
+    }
+
+    private static Map<String, String> captureFixedFields(
+        Content content,
+        Class<?> trustedOwner,
+        List<String> names,
+        Budget budget
+    ) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (String name : names) {
+            try {
+                Field field = trustedOwner.getField(name);
+                if (!isTargetOwnedClass(field.getDeclaringClass(), Content.class)) {
+                    fields.put(name, opaque(field.getType(), "UNTRUSTED_TARGET_FIELD", null, name));
+                    continue;
+                }
+                if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
+                fields.put(name, encodeValue(field.get(content), field.getType(), 0, budget));
+            } catch (NoSuchFieldException error) {
+                fields.put(name, opaque(null, "TARGET_FIELD_MISSING", null, name));
+            } catch (Throwable error) {
+                fields.put(name, opaque(null, "FIELD_READ_FAILED", error.getClass().getName(), name));
+            }
+        }
+        return fields;
+    }
+
+    /**
+     * Captures only fields exposed by a pristine target Arc Json schema for the already-approved
+     * target-owned fallback class. This mirrors ContentParser.readFields without trusting the
+     * mutable Json instance used while the input Mod is running. In particular, this uses FieldMetadata.field
+     * rather than content.getClass().getField(name), so a Mod subclass cannot inject or shadow a
+     * field selected for serialization.
+     */
+    private static Map<String, String> captureParserFields(Content content, Fallback fallback) {
+        if (fallback == null || !isTargetOwnedFallback(fallback.runtimeClass(), contentType(content))) {
+            return Map.of();
+        }
+
+        List<ParserField> selected = new ArrayList<>();
+        for (ObjectMap.Entry<String, FieldMetadata> entry : TARGET_FIELD_SCHEMA.getFields(fallback.runtimeClass())) {
+            FieldMetadata metadata = entry.value;
+            Field field = metadata == null ? null : metadata.field;
+            if (!isTargetOwnedParserField(entry.key, field, fallback.runtimeClass())) continue;
+            if (isParserPseudoField(content, entry.key)) continue;
+            selected.add(new ParserField(entry.key, field));
+        }
+        selected.sort(
+            Comparator.comparing(ParserField::name)
+                .thenComparing(value -> value.field().getDeclaringClass().getName())
+                .thenComparing(value -> value.field().getType().getName())
+        );
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        Budget budget = new Budget();
+        for (ParserField selectedField : selected) {
+            Field field = selectedField.field();
+            try {
+                fields.put(
+                    selectedField.name(),
+                    encodeValue(field.get(content), field.getType(), 0, budget)
+                );
+            } catch (Throwable error) {
+                fields.put(
+                    selectedField.name(),
+                    opaque(field.getType(), "FIELD_READ_FAILED", error.getClass().getName(), selectedField.name())
+                );
+            }
+        }
+        return fields;
+    }
+
+    private static boolean isTargetOwnedParserField(String name, Field field, Class<?> fallbackClass) {
+        if (name == null || field == null || !name.equals(field.getName())) return false;
+        int modifiers = field.getModifiers();
+        if (Modifier.isStatic(modifiers) || Modifier.isTransient(modifiers) || field.isSynthetic()) return false;
+        Class<?> owner = field.getDeclaringClass();
+        return owner.isAssignableFrom(fallbackClass) &&
+            isTargetOwnedClass(owner, Content.class) &&
+            isTargetOwnedClass(fallbackClass, Content.class);
+    }
+
+    private static boolean isParserPseudoField(Content content, String name) {
+        if (COMMON_PARSER_PSEUDO_FIELDS.contains(name)) return true;
+        if (content instanceof UnitType) return UNIT_PARSER_PSEUDO_FIELDS.contains(name);
+        return content instanceof Block && BLOCK_PARSER_PSEUDO_FIELDS.contains(name);
+    }
+
+    private static String encodeValue(Object value, Class<?> declaredType, int depth, Budget budget) {
+        if (!budget.take()) return opaque(declaredType, "NODE_BUDGET_EXCEEDED", className(value), null);
+        if (depth > 8) return opaque(declaredType, "DEPTH_BUDGET_EXCEEDED", className(value), null);
+        if (value == null) return typed(declaredType, "{\"kind\":\"null\"}");
+        if (value instanceof Boolean bool) {
+            return typed(declaredType, "{\"kind\":\"boolean\",\"value\":" + bool + "}");
+        }
+        if (value instanceof Number number) {
+            String encodedNumber = safeNumberValue(number);
+            if (encodedNumber == null) {
+                return opaque(declaredType, "UNSUPPORTED_NUMBER_SUBCLASS", value.getClass().getName(), null);
+            }
+            return typed(
+                declaredType,
+                "{\"kind\":\"number\",\"numberType\":" + quote(numberType(number)) +
+                    ",\"value\":" + quote(encodedNumber) + "}"
+            );
+        }
+        if (value instanceof Character character) {
+            return typed(declaredType, "{\"kind\":\"string\",\"value\":" + quote(Character.toString(character)) +
+                ",\"truncated\":false}");
+        }
+        if (value instanceof String string) {
+            int allowed = budget.takeStringCharacters(string.length());
+            String bounded = allowed == string.length() ? string : string.substring(0, allowed);
+            return typed(
+                declaredType,
+                "{\"kind\":\"string\",\"value\":" + quote(bounded) +
+                    ",\"truncated\":" + (allowed != string.length()) + "}"
+            );
+        }
+        if (value instanceof Enum<?> enumeration) {
+            return typed(
+                declaredType,
+                "{\"kind\":\"enum\",\"enumType\":" + quote(value.getClass().getName()) +
+                    ",\"value\":" + quote(enumeration.name()) + "}"
+            );
+        }
+        if (value instanceof Color color) {
+            return typed(declaredType, "{\"kind\":\"color\",\"rgba\":" + quote(rgba(color)) + "}");
+        }
+        if (value instanceof MappableContent mapped) {
+            String owner = mapped.minfo == null || mapped.minfo.mod == null ? null : mapped.minfo.mod.name;
+            ContentType mappedType = contentType(mapped);
+            return typed(
+                declaredType,
+                "{\"kind\":\"contentRef\",\"contentType\":" + quote(mappedType.name()) +
+                    ",\"name\":" + quote(mapped.name) + ",\"ownerMod\":" + quoteNullable(owner) + "}"
+            );
+        }
+        if (value instanceof Effect) {
+            StaticRef ref = EFFECT_REFS.get(value);
+            if (ref != null) {
+                return typed(
+                    declaredType,
+                    "{\"kind\":\"staticRef\",\"owner\":" + quote(ref.owner()) +
+                        ",\"field\":" + quote(ref.field()) + ",\"parserValue\":" + quote(ref.field()) + "}"
+                );
+            }
+            return opaque(declaredType, "CUSTOM_OR_COMPOSED_EFFECT", value.getClass().getName(), null);
+        }
+
+        Class<?> type = value.getClass();
+        if (type.isArray()) {
+            int length = Math.min(Array.getLength(value), MAX_CONTAINER_ITEMS);
+            List<String> encoded = new ArrayList<>(length);
+            for (int index = 0; index < length; index++) {
+                encoded.add(encodeValue(Array.get(value, index), type.getComponentType(), depth + 1, budget));
+            }
+            return typed(declaredType, arrayValue(encoded, Array.getLength(value) > length));
+        }
+        if (value instanceof Iterable<?> iterable) {
+            if (!trustedArcIterable(value)) {
+                return opaque(declaredType, "UNTRUSTED_ITERABLE", value.getClass().getName(), null);
+            }
+            List<String> encoded = new ArrayList<>();
+            int count = 0;
+            for (Object element : iterable) {
+                if (count++ >= MAX_CONTAINER_ITEMS) break;
+                encoded.add(encodeValue(element, Object.class, depth + 1, budget));
+            }
+            if (value.getClass().getName().contains("ObjectSet")) Collections.sort(encoded);
+            return typed(declaredType, arrayValue(encoded, count > MAX_CONTAINER_ITEMS));
+        }
+        return opaque(declaredType, "UNSUPPORTED_RUNTIME_OBJECT", value.getClass().getName(), null);
+    }
+
+    private static boolean trustedArcIterable(Object value) {
+        Class<?> type = value.getClass();
+        return type.getName().startsWith("arc.struct.") && type.getClassLoader() == Seq.class.getClassLoader();
+    }
+
+    private static String arrayValue(List<String> values, boolean truncated) {
+        StringBuilder json = new StringBuilder();
+        json.append("{\"kind\":\"array\",\"values\":[");
+        for (int index = 0; index < values.size(); index++) {
+            if (index > 0) json.append(',');
+            json.append(values.get(index));
+        }
+        json.append("],\"truncated\":").append(truncated).append('}');
+        return json.toString();
+    }
+
+    private static List<String> declaredLosses(Content content) {
+        List<String> losses = new ArrayList<>();
+        if (content instanceof StatusEffect status) {
+            Object transitions = trustedField(status, StatusEffect.class, "transitions");
+            if (transitions instanceof ObjectMap<?, ?> map && map.size > 0) {
+                losses.add(loss(
+                    "transitions",
+                    "STATUS_TRANSITION_HANDLERS_REQUIRE_REBUILD",
+                    map.size + " runtime transition handler(s) contain callbacks. Standard opposite/affinity behavior " +
+                        "can be rebuilt from the exported sets; custom handlers cannot be serialized."
+                ));
+            }
+            Object initblock = trustedField(status, StatusEffect.class, "initblock");
+            if (initblock != null && !initblock.getClass().getName().startsWith("mindustry.type.StatusEffect$$Lambda")) {
+                losses.add(loss(
+                    "initblock",
+                    "CUSTOM_STATUS_INIT_CALLBACK_NOT_SERIALIZED",
+                    "Runtime callback class: " + initblock.getClass().getName()
+                ));
+            }
+        }
+        return losses;
+    }
+
+    private static Object trustedField(Object instance, Class<?> owner, String name) {
+        try {
+            Field field = owner.getDeclaredField(name);
+            if (!field.trySetAccessible()) return null;
+            return field.get(instance);
+        } catch (ReflectiveOperationException ignored) {
+            return null;
+        }
+    }
+
+    private static String loss(String field, String reason, String detail) {
+        return "{\"field\":" + quote(field) + ",\"reason\":" + quote(reason) +
+            ",\"detail\":" + quote(detail) + "}";
+    }
+
+    private static List<String> customFields(Class<?> runtimeClass, Fallback fallback) {
+        if (fallback == null) return List.of();
+        Set<String> fields = new LinkedHashSet<>();
+        boolean truncated = false;
+        for (Class<?> type = runtimeClass; type != null && type != fallback.runtimeClass(); type = type.getSuperclass()) {
+            try {
+                for (Field field : type.getDeclaredFields()) {
+                    if (Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) continue;
+                    if (fields.size() >= MAX_DECLARATION_ROWS) {
+                        truncated = true;
+                        break;
+                    }
+                    fields.add(metadataText(type.getName() + "#" + field.getName() + ":" + field.getType().getName()));
+                }
+            } catch (Throwable error) {
+                fields.add(metadataText(type.getName() + "#<field-inspection-failed:" + error.getClass().getName() + ">"));
+            }
+            if (truncated) break;
+        }
+        if (truncated) fields.add("<truncated:custom-field-limit>");
+        List<String> sorted = new ArrayList<>(fields);
+        Collections.sort(sorted);
+        return sorted;
+    }
+
+    private static List<String> overriddenMethods(Class<?> runtimeClass, Fallback fallback) {
+        return customMethods(runtimeClass, fallback, true);
+    }
+
+    private static List<String> customOnlyMethods(Class<?> runtimeClass, Fallback fallback) {
+        return customMethods(runtimeClass, fallback, false);
+    }
+
+    private static List<String> customMethods(Class<?> runtimeClass, Fallback fallback, boolean overridden) {
+        if (fallback == null) return List.of();
+        Set<String> methods = new LinkedHashSet<>();
+        boolean truncated = false;
+        for (Class<?> type = runtimeClass; type != null && type != fallback.runtimeClass(); type = type.getSuperclass()) {
+            try {
+                for (Method method : type.getDeclaredMethods()) {
+                    int modifiers = method.getModifiers();
+                    if (Modifier.isStatic(modifiers) || Modifier.isPrivate(modifiers) || method.isSynthetic() || method.isBridge()) continue;
+                    boolean hasBase = findMethod(fallback.runtimeClass(), method) != null;
+                    if (hasBase != overridden) continue;
+                    if (methods.size() >= MAX_DECLARATION_ROWS) {
+                        truncated = true;
+                        break;
+                    }
+                    methods.add(metadataText(type.getName() + "#" + methodSignature(method)));
+                }
+            } catch (Throwable error) {
+                if (!overridden) {
+                    methods.add(metadataText(type.getName() + "#<method-inspection-failed:" + error.getClass().getName() + ">"));
+                }
+            }
+            if (truncated) break;
+        }
+        if (truncated) methods.add("<truncated:custom-method-limit>");
+        List<String> sorted = new ArrayList<>(methods);
+        Collections.sort(sorted);
+        return sorted;
+    }
+
+    private static Method findMethod(Class<?> base, Method method) {
+        for (Class<?> type = base; type != null; type = type.getSuperclass()) {
+            try {
+                return type.getDeclaredMethod(method.getName(), method.getParameterTypes());
+            } catch (NoSuchMethodException ignored) {
+                // Keep walking trusted target classes.
+            }
+        }
+        return null;
+    }
+
+    private static String methodSignature(Method method) {
+        StringBuilder result = new StringBuilder(method.getName()).append('(');
+        Class<?>[] parameters = method.getParameterTypes();
+        for (int index = 0; index < parameters.length; index++) {
+            if (index > 0) result.append(',');
+            result.append(parameters[index].getName());
+        }
+        return result.append("):").append(method.getReturnType().getName()).toString();
+    }
+
+    private static Fallback resolveFallback(Content content) {
+        ContentType contentType = contentType(content);
+        Class<?> required = requiredRoot(contentType);
+        for (Class<?> type = content.getClass(); type != null; type = type.getSuperclass()) {
+            if (required != null && !required.isAssignableFrom(type)) continue;
+            if (required != null && !isTargetOwnedFallback(type, contentType)) continue;
+            String parserName = classMapName(type);
+            if (parserName == null) continue;
+            if (isLoadable(contentType) && !constructibleRoot(type, contentType)) continue;
+            return new Fallback(parserName, type);
+        }
+        return null;
+    }
+
+    private static boolean isTargetOwnedFallback(Class<?> type, ContentType contentType) {
+        Class<?> required = requiredRoot(contentType);
+        return required != null &&
+            required.isAssignableFrom(type) &&
+            isTargetOwnedClass(type, required);
+    }
+
+    private static boolean isTargetOwnedClass(Class<?> candidate, Class<?> anchor) {
+        if (candidate.getClassLoader() != anchor.getClassLoader()) return false;
+        String candidateSource = codeSource(candidate);
+        String anchorSource = codeSource(anchor);
+        return candidateSource != null && candidateSource.equals(anchorSource);
+    }
+
+    private static String codeSource(Class<?> type) {
+        try {
+            if (type.getProtectionDomain() == null ||
+                type.getProtectionDomain().getCodeSource() == null ||
+                type.getProtectionDomain().getCodeSource().getLocation() == null) return null;
+            return type.getProtectionDomain().getCodeSource().getLocation().toExternalForm();
+        } catch (SecurityException ignored) {
+            return null;
+        }
+    }
+
+    private static Seq<?>[] contentMap() {
+        if (Vars.content == null) throw new IllegalStateException("Vars.content is not initialized.");
+        try {
+            return (Seq<?>[])CONTENT_MAP_FIELD.get(Vars.content);
+        } catch (IllegalAccessException error) {
+            throw new IllegalStateException("Could not read target ContentLoader.contentMap.", error);
+        }
+    }
+
+    private static Content contentAt(Seq<?> sequence, int index) {
+        Object[] items = (Object[])sequence.items;
+        Object value = items[index];
+        if (value instanceof Content content) return content;
+        throw new IllegalStateException(
+            "ContentLoader registry contains a non-Content value at index " + index + "."
+        );
+    }
+
+    private static Field targetField(Class<?> owner, String name) {
+        try {
+            Field field = owner.getDeclaredField(name);
+            if (!field.trySetAccessible()) {
+                throw new IllegalStateException("Could not access target field " + owner.getName() + "#" + name + ".");
+            }
+            return field;
+        } catch (NoSuchFieldException error) {
+            throw new IllegalStateException("Missing target field " + owner.getName() + "#" + name + ".", error);
+        }
+    }
+
+    private static Class<?> requiredRoot(ContentType type) {
+        return switch (type) {
+            case block -> Block.class;
+            case unit -> UnitType.class;
+            case item -> Item.class;
+            case liquid -> Liquid.class;
+            case status -> StatusEffect.class;
+            case weather -> Weather.class;
+            default -> null;
+        };
+    }
+
+    private static boolean constructibleRoot(Class<?> type, ContentType contentType) {
+        if (Modifier.isAbstract(type.getModifiers()) || type.isInterface()) return false;
+        if (contentType == ContentType.status) return type == StatusEffect.class;
+        if (contentType == ContentType.item) return type == Item.class;
+        try {
+            Constructor<?> constructor = type.getConstructor(String.class);
+            return Modifier.isPublic(constructor.getModifiers());
+        } catch (NoSuchMethodException ignored) {
+            return false;
+        }
+    }
+
+    private static Map<Class<?>, String> freezeTargetClassNames() {
+        Map<Class<?>, String> frozen = new LinkedHashMap<>();
+        for (ObjectMap.Entry<String, Class<?>> entry : ClassMap.classes) {
+            Class<?> type = entry.value;
+            if (type == null || entry.key == null || !entry.key.equals(type.getSimpleName())) continue;
+            Class<?> required = targetRootFor(type);
+            if (required == null || !isTargetOwnedClass(type, required)) continue;
+            frozen.putIfAbsent(type, entry.key);
+        }
+        return Collections.unmodifiableMap(frozen);
+    }
+
+    private static Class<?> targetRootFor(Class<?> type) {
+        if (Block.class.isAssignableFrom(type)) return Block.class;
+        if (UnitType.class.isAssignableFrom(type)) return UnitType.class;
+        if (Item.class.isAssignableFrom(type)) return Item.class;
+        if (Liquid.class.isAssignableFrom(type)) return Liquid.class;
+        if (StatusEffect.class.isAssignableFrom(type)) return StatusEffect.class;
+        if (Weather.class.isAssignableFrom(type)) return Weather.class;
+        return null;
+    }
+
+    private static String classMapName(Class<?> type) {
+        return TARGET_CLASS_NAMES.get(type);
+    }
+
+    private static boolean isLoadable(ContentType type) {
+        for (ContentType loadable : ContentAsset.loadableContent) {
+            if (loadable == type) return true;
+        }
+        return false;
+    }
+
+    private static List<String> ancestry(Class<?> runtimeClass) {
+        List<String> result = new ArrayList<>();
+        for (Class<?> type = runtimeClass; type != null; type = type.getSuperclass()) {
+            if (result.size() >= MAX_ANCESTRY_DEPTH) {
+                result.add("<truncated:ancestry-limit>");
+                break;
+            }
+            result.add(metadataText(type.getName()));
+        }
+        return result;
+    }
+
+    private static IdentityHashMap<Object, StaticRef> staticRefs(Class<?> owner, Class<?> expected) {
+        IdentityHashMap<Object, StaticRef> result = new IdentityHashMap<>();
+        List<Field> fields = new ArrayList<>(List.of(owner.getFields()));
+        fields.sort(Comparator.comparing(Field::getName));
+        for (Field field : fields) {
+            if (!Modifier.isStatic(field.getModifiers()) || !expected.isAssignableFrom(field.getType())) continue;
+            try {
+                Object value = field.get(null);
+                if (value != null && !result.containsKey(value)) {
+                    result.put(value, new StaticRef(owner.getName(), field.getName()));
+                }
+            } catch (ReflectiveOperationException ignored) {
+                // A missing static identity is an ordinary opaque value later.
+            }
+        }
+        return result;
+    }
+
+    private static boolean belongsTo(Content content, String targetMod) {
+        return content.minfo.mod != null && content.minfo.mod.name.equalsIgnoreCase(targetMod);
+    }
+
+    /** Avoids virtual dispatch into a Mod override for every root/reference type supported here. */
+    private static ContentType contentType(Content content) {
+        if (content instanceof Block) return ContentType.block;
+        if (content instanceof UnitType) return ContentType.unit;
+        if (content instanceof Item) return ContentType.item;
+        if (content instanceof Liquid) return ContentType.liquid;
+        if (content instanceof StatusEffect) return ContentType.status;
+        if (content instanceof Weather) return ContentType.weather;
+
+        if (Vars.content != null) {
+            Seq<?>[] map = contentMap();
+            for (ContentType candidateType : ContentType.all) {
+                Seq<?> sequence = map[candidateType.ordinal()];
+                int id = content.id;
+                Object[] items = (Object[])sequence.items;
+                if (id >= 0 && id < sequence.size && items[id] == content) return candidateType;
+                for (int index = 0; index < sequence.size; index++) {
+                    if (items[index] == content) return candidateType;
+                }
+            }
+        }
+        throw new IllegalArgumentException(
+            "Unsupported custom Content root/reference type: " + content.getClass().getName()
+        );
+    }
+
+    static String contentTypeName(Content content) {
+        return contentType(content).name();
+    }
+
+    static String contentName(Content content) {
+        return content instanceof MappableContent mapped ? mapped.name : content.getClass().getName() + "#" + content.id;
+    }
+
+    private static String numberType(Number number) {
+        if (number instanceof Byte) return "byte";
+        if (number instanceof Short) return "short";
+        if (number instanceof Integer) return "int";
+        if (number instanceof Long) return "long";
+        if (number instanceof Float) return "float";
+        if (number instanceof Double) return "double";
+        return number.getClass().getName();
+    }
+
+    /** Returns null for a Number implementation whose conversion could dispatch into Mod code. */
+    private static String safeNumberValue(Number number) {
+        if (number instanceof Byte value) return Byte.toString(value);
+        if (number instanceof Short value) return Short.toString(value);
+        if (number instanceof Integer value) return Integer.toString(value);
+        if (number instanceof Long value) return Long.toString(value);
+        if (number instanceof Float value) return Float.toString(value);
+        if (number instanceof Double value) return Double.toString(value);
+        return null;
+    }
+
+    private static String rgba(Color color) {
+        return hex(color.r) + hex(color.g) + hex(color.b) + hex(color.a);
+    }
+
+    private static String hex(float value) {
+        int component = Math.max(0, Math.min(255, Math.round(value * 255f)));
+        return String.format(Locale.ROOT, "%02x", component);
+    }
+
+    private static String typed(Class<?> declaredType, String value) {
+        String declared = declaredType == null ? "null" : quote(declaredType.getName());
+        return "{\"declaredType\":" + declared + "," + value.substring(1);
+    }
+
+    private static String opaque(Class<?> declaredType, String reason, String runtimeClass, String detail) {
+        return typed(declaredType, "{\"kind\":\"opaque\",\"reason\":" + quote(reason) +
+            ",\"runtimeClass\":" + quoteNullable(runtimeClass) +
+            ",\"detail\":" + quoteNullable(detail) + "}");
+    }
+
+    private static String className(Object value) {
+        return value == null ? null : value.getClass().getName();
+    }
+
+    private static String metadataText(String value) {
+        if (value.length() <= MAX_METADATA_TEXT) return value;
+        return value.substring(0, MAX_METADATA_TEXT) + "<truncated>";
+    }
+
+    private static synchronized void reserveSnapshotBytes(long bytes) {
+        if (bytes < 0L || totalSnapshotBytes > maxTotalSnapshotBytes - bytes) {
+            throw new IllegalStateException(
+                "Runtime snapshot TSV output exceeds the configured total limit of " +
+                    maxTotalSnapshotBytes + " bytes."
+            );
+        }
+        totalSnapshotBytes += bytes;
+    }
+
+    private static long positiveLongProperty(String name, long defaultValue) {
+        String value = System.getProperty(name);
+        if (value == null || value.isBlank()) return defaultValue;
+        try {
+            long parsed = Long.parseLong(value);
+            if (parsed <= 0L) throw new NumberFormatException("not positive");
+            return parsed;
+        } catch (NumberFormatException error) {
+            throw new IllegalStateException("System property " + name + " must be a positive integer.", error);
+        }
+    }
+
+    private static void stringArray(
+        StringBuilder json,
+        int indent,
+        String name,
+        List<String> values,
+        boolean comma
+    ) {
+        json.append("  ".repeat(indent)).append(quote(name)).append(": [");
+        if (!values.isEmpty()) json.append('\n');
+        for (int index = 0; index < values.size(); index++) {
+            json.append("  ".repeat(indent + 1)).append(quote(values.get(index)));
+            if (index + 1 < values.size()) json.append(',');
+            json.append('\n');
+        }
+        json.append("  ".repeat(indent)).append(']');
+        if (comma) json.append(',');
+        json.append('\n');
+    }
+
+    private static void property(StringBuilder json, int indent, String name, String value, boolean comma) {
+        json.append("  ".repeat(indent)).append(quote(name)).append(": ").append(value);
+        if (comma) json.append(',');
+        json.append('\n');
+    }
+
+    private static String quoteNullable(String value) {
+        return value == null ? "null" : quote(value);
+    }
+
+    private static String quote(String value) {
+        StringBuilder escaped = new StringBuilder(value.length() + 16).append('"');
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            switch (character) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (character < 0x20) {
+                        escaped.append(String.format(Locale.ROOT, "\\u%04x", (int)character));
+                    } else {
+                        escaped.append(character);
+                    }
+                }
+            }
+        }
+        return escaped.append('"').toString();
+    }
+
+    private static String encode(String value) {
+        return encode(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String encode(byte[] value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
+    }
+
+    private record Fallback(String parserName, Class<?> runtimeClass) {
+    }
+
+    private record ParserField(String name, Field field) {
+    }
+
+    private record StaticRef(String owner, String field) {
+    }
+
+    private static final class Budget {
+        private int remainingNodes = 8_192;
+        private int remainingStringCharacters = 1_048_576;
+
+        boolean take() {
+            return remainingNodes-- > 0;
+        }
+
+        int takeStringCharacters(int requested) {
+            int granted = Math.max(0, Math.min(requested, remainingStringCharacters));
+            remainingStringCharacters -= granted;
+            return granted;
+        }
+    }
+}

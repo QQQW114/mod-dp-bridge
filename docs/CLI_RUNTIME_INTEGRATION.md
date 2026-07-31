@@ -1,220 +1,256 @@
-# Local runtime conversion: minimal CLI integration architecture
+# `runtime-convert` 本地运行时转换主线
 
-Last reviewed: 2026-08-01
+最后更新：2026-08-01（Asia/Shanghai）
 
-## Decision
+## 定位
 
-Keep the existing safe `convert INPUT` command unchanged and add a separate, explicitly dangerous
-local command. Do not make runtime execution an implicit fallback: users and callers must be able to
-tell from the command line whether Mod bytecode will run.
-
-```powershell
-dpbridge runtime-convert `
-  --server-jar "C:\path\to\server-release.jar" `
-  --mod-jar "C:\path\to\trusted-mod.jar" `
-  --source "C:\path\to\source-directory-or.zip" `
-  --allow-mod-execution `
-  --runtime-timeout 120 `
-  --server-timeout 60 `
-  -o ".\out\trusted-mod"
-```
-
-Required:
-
-- `--server-jar`: the v159.7/B480 runtime used both to load the source Mod and to validate the
-  generated DP;
-- `--mod-jar`: the built release JAR. This is the authority for registered Content and assets;
-- `--allow-mod-execution`: mandatory acknowledgement that the Mod receives the current user's JVM
-  permissions.
-
-Optional:
-
-- `--source`: source directory or ZIP used only for class/line/asset provenance;
-- `--mod-id`: override when `mod.hjson` detection is ambiguous;
-- `--runtime-timeout`: source-Mod extraction timeout;
-- `--server-timeout`: each existing v159.7 discovery/apply validation timeout;
-- existing output, overwrite, and archive limit options.
-
-Do not add a second positional `INPUT` interpretation to `convert`: its current input may be a
-directory, ZIP/JAR, CP, or DP, while runtime conversion requires three inputs with different trust
-roles. A separate command also prevents Web/automation callers from accidentally enabling code
-execution.
-
-## Pipeline
-
-```mermaid
-flowchart TD
-    CLI["runtime-convert CLI"] --> PRE["Preflight paths, limits, explicit consent"]
-    PRE --> RUN["bridge-runtime-extractor child process"]
-    RUN --> SNAP["Versioned inert runtime snapshot"]
-    MOD["Release Mod JAR"] --> RUN
-    SERVER["v159.7 Server JAR"] --> RUN
-    SOURCE["Optional source directory/ZIP"] --> INDEX["bridge-source-index"]
-    MOD --> INDEX
-    SNAP --> ENCODE["Runtime snapshot decoder and DP encoder"]
-    INDEX --> ENCODE
-    MOD --> PLAN["Existing asset planner"]
-    ENCODE --> PLAN
-    PLAN --> PACK["Existing deterministic server-assets + ZIP packager"]
-    PACK --> STRUCT["Mindustry1597StructuralValidator"]
-    STRUCT --> APPLY["Mindustry1597ContentApplyValidator"]
-    SERVER --> APPLY
-    APPLY --> REPORT["Existing report/log finalization"]
-```
-
-The CLI must launch the extractor as a child process and stream its combined output to both
-`conversion.log` and `logs/runtime-extractor.log`. The extractor already creates a second isolated
-Mindustry worker process. For the first integration, invoking its main class from the CLI
-distribution classpath is less invasive than loading Mod classes into the CLI process. A later
-public runner API may remove the extra launcher process, but must retain the child Mindustry JVM.
-
-The current runtime snapshot schema version 1 contains registry identity only. It is useful for
-inventory validation but **must not be accepted as sufficient conversion input**. `runtime-convert`
-should initially reject it with a structured `RUNTIME_SNAPSHOT_SCHEMA_UNSUPPORTED` diagnostic until
-the extractor emits the versioned neutral field/object IR required by
-`docs/DYNAMIC_RUNTIME_EXTRACTION.md`.
-
-## Converter integration without duplicating asset logic
-
-Do not expose or copy `DeterministicPackager` into the CLI/runtime extractor. Add a second inert-input
-entry point to `BridgeConverter` after the runtime snapshot has been produced:
-
-```kotlin
-BridgeConverter.convertRuntimePrepared(
-    request = ConversionRequest(input = modJar, ...),
-    runtime = RuntimePreparedConversion(...),
-)
-```
-
-`RuntimePreparedConversion` should contain generated target-relative HJSON, per-content results,
-diagnostics, metadata, and provenance paths into the Mod JAR. `BridgeConverter` still performs no
-code execution; it only consumes the already-written snapshot.
-
-Internally this entry point should reuse the existing flow:
-
-1. `SafeSourceReader` reads the release JAR with normal archive limits;
-2. `SourceDetector` obtains the Mod namespace;
-3. runtime-generated HJSON is adapted to the same internal generated-file aggregate currently fed
-   to `ConversionPlanner`;
-4. the existing planner performs namespace rewriting, asset path selection, collision handling,
-   sprite/audio/bundle handling, reference checks, and offline sprite generation;
-5. `DeterministicPackager` writes both `server-assets/` and the deterministic DP ZIP.
-
-This is preferable to a second runtime-specific packager because New Horizon's JAR has flattened
-runtime asset roots (`sprites/`, `sounds/`, `bundles/`), which the existing Mod planning path already
-understands.
-
-Runtime mode must skip ServiceLoader static exporters. JAR runtime state is authoritative; static
-AST output must not be merged as a second source of Content.
-
-### File provenance and hybrid Mods
-
-Every runtime-generated content file should refer to a real JAR entry:
-
-- first choice: the class entry identified by runtime class/registration stack;
-- second choice: the original declarative `content/` entry when registration came from data;
-- last-resort fallback: the Mod descriptor, accompanied by a provenance warning.
-
-Create file-level outcomes for all JAR `.class` entries so the existing
-`MOD_CODE_NOT_EXECUTED` diagnostic is not emitted after code was intentionally executed. Classes
-that directly registered gameplay Content list their generated output paths; helper/UI/runtime
-classes receive an explicit no-direct-output/excluded result.
-
-For hybrid Mods, mark original declarative `content/` files as replaced by the authoritative
-runtime snapshot so the planner does not also emit duplicate declarations. Preserve `patches/`:
-runtime ownership snapshots do not fully represent mutations to vanilla Content, and the real
-DataPatcher validator remains the authority for those patch files.
-
-## Optional source handling
-
-After successful extraction, call:
-
-```kotlin
-JarSourceIndexer().index(modJar, source)
-```
-
-The source input never supplies output bytes. It only:
-
-- resolves runtime classes/registration frames to repository paths and line numbers;
-- reports stale or ambiguous source matches;
-- proves whether repository assets equal JAR assets by relative path plus SHA-256.
-
-The release JAR remains authoritative when source differs. For a source ZIP with one GitHub-style
-outer directory, the source index ignores that outer directory through package metadata and locates
-the `assets` path segment before comparing JAR-relative paths.
-
-## Validation reuse
-
-After packaging, run the same validators as the static command:
-
-1. `Mindustry1597StructuralValidator.validate(dpZip)`;
-2. optionally retain `Mindustry1597ServerValidator` for cold-start discovery diagnostics;
-3. **mandatory for runtime conversion:**
-   `Mindustry1597ContentApplyValidator.validate(serverAssets, serverJar, timeout)`.
-
-The apply validator does not load the source Mod. It proves that the generated DP alone can be read
-and applied by the supplied v159.7 DataManager/DataPatcher. Any apply failure makes the final result
-`REJECTED`. `SERVER_LOAD` and `MAP_IMPORT` remain `NOT_RUN` until a map/save carrying the generated
-DP is actually loaded.
-
-Move the existing validation/report-merging block out of `ConvertCommand.call()` into a CLI-local
-`Mindustry1597ValidationRunner`. Both commands can then share log files, stage merging, diagnostic
-deduplication, metadata, and exit-code behavior without changing the validators themselves.
-
-## Report and logs
-
-The first integration does not require a `bridge-model` schema break. Use existing
-`ContentResult`, `FileResult`, `Diagnostic`, `ValidationStage.RUNTIME`, and `OutputArtifactKind.OTHER`.
-Add stable metadata keys for:
-
-- source Mod JAR/server JAR paths and SHA-256;
-- runtime snapshot schema/path/hash and registered counts;
-- extractor exit code, timeout, and logs;
-- source-index class and asset match counts;
-- generated, degraded, dropped, and excluded runtime contents;
-- DataPatcher apply counts and result.
-
-Recommended retained files:
+`runtime-convert` 是编译型 Java/Kotlin Mod 的当前主线。它与不执行输入代码的
+`convert INPUT` 分开，不会被网页或静态流程隐式启用。
 
 ```text
-logs/conversion.log
-logs/runtime-extractor.log
-logs/runtime-work/.../headless.log
-logs/runtime-work/.../registration-traces.tsv
-runtime-snapshot.json
-source-index-report.json          # only when --source is supplied
-logs/server-asset-discovery.log
-logs/data-patch-apply.log
-report.json
-report.md
+可信发布 JAR
+  -> 官方 Mindustry v159.7 Server 在独立 JVM 中真实加载
+  -> Vars.content 三阶段快照
+  -> Item/Liquid/StatusEffect 动态映射
+  -> 可选源码的 Block/Unit AST 候选
+  -> 官方 DataPatcher 单调筛选
+  -> 复用 BridgeConverter 正式打包
+  -> 结构、Server 资产发现、最终 DataPatcher.apply
 ```
 
-The combined `RUNTIME` validation stage passes only when source extraction completed, the expected
-target Mod was identified, the server version is exactly build 159 revision 7, and generated assets
-passed the real apply validator.
+Web 已退出主线。`bridge-web` 只保留历史静态转换代码，不接入、也不得
+代理 `runtime-convert`。
 
-## File-level implementation order
+## 固定目标运行时
 
-1. **Freeze the runtime snapshot contract** in `bridge-runtime-extractor` documentation/tests.
-   Keep schema v1 inventory-only; introduce a new schema version for field/object IR.
-2. **`bridge-converter`**: add `RuntimePreparedConversion.kt` and a tested
-   `BridgeConverter.convertRuntimePrepared` entry point; refactor only the common conversion body.
-   Reuse `ConversionPlanner` and `DeterministicPackager` rather than adding another writer.
-3. **`bridge-converter` tests**: use inert, self-authored runtime snapshot fixtures to prove class
-   claiming, hybrid-content replacement, asset reuse, collision handling, and deterministic ZIPs.
-4. **`bridge-cli`**: add `RuntimeConvertCommand.kt` and register it beside `ConvertCommand`.
-5. **`bridge-cli`**: add `RuntimeExtractorProcess.kt`; depend on
-   `bridge-runtime-extractor` and `bridge-source-index`, pass explicit output/work paths, stream logs,
-   enforce timeouts, and terminate the child process tree on cancellation.
-6. **`bridge-cli`**: extract the existing lines 114-255 validation/report logic from `Main.kt` into
-   `Mindustry1597ValidationRunner.kt`, then call it from both commands.
-7. **`bridge-model`**: make no mandatory first-pass change. Add field-level result models only when
-   the runtime IR exporter needs structured per-field reporting rather than encoding it in
-   diagnostics/metadata.
-8. **`bridge-target-1597`**: keep `Mindustry1597ContentApplyValidator` unchanged initially; add new
-   target code only if the runtime IR encoder needs a reusable v159.7 schema/ClassMap service.
-9. Run normal unit tests, a self-authored executable fixture, then the opt-in New Horizon end-to-end
-   test. Never make third-party Mod execution part of the default test task.
+当前只接受 Mindustry 官方 `v159.7` Release `server-release.jar`（项目目标
+v159.7/B480），预检会校验精确 SHA-256：
 
-This sequence produces an early CLI shell without weakening the static command, while postponing
-actual DP claims until the runtime snapshot contains enough data to encode and validate content.
+```text
+e41289c32bcf765eb50fa131e6b515d741e20f7843fb567d3aa949e7461f22ab
+```
+
+同一个 pinned JAR 同时用于：
+
+1. 加载原 Mod 并产生运行时快照；
+2. 筛选可选 Block/Unit 候选；
+3. 对最终 DP 执行 Server 资产发现和 `DataPatcher.apply`。
+
+因此，当前不是“任意 Server JAR”接口，也未实现使用旧版源运行时的双运行时
+迁移。本就无法在官方 v159.7 启动的 146–158 发布 JAR 不在当前动态主线的
+可保证范围内。
+
+## 命令
+
+先构建本地 CLI 分发包：
+
+```powershell
+.\scripts\gradle.ps1 :bridge-cli:installDist --no-daemon
+```
+
+只提供发布 JAR 时：
+
+```powershell
+.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat runtime-convert `
+  --mod-jar "C:\path\to\trusted-mod.jar" `
+  --server-jar "C:\path\to\official-v159.7-server-release.jar" `
+  --allow-mod-execution `
+  -o ".\out\trusted-mod-runtime"
+```
+
+同时提供匹配的源码目录或源码 ZIP 时：
+
+```powershell
+.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat runtime-convert `
+  --mod-jar "C:\path\to\trusted-mod.jar" `
+  --source "C:\path\to\matching-source.zip" `
+  --server-jar "C:\path\to\official-v159.7-server-release.jar" `
+  --allow-mod-execution `
+  --runtime-timeout 180 `
+  --server-timeout 60 `
+  --hybrid-max-rounds 8 `
+  -o ".\out\trusted-mod-runtime" `
+  --overwrite
+```
+
+环境需要 JDK 17 或更高版本，不能是缺少 `javac` 的精简 JRE。Extractor 会对精确的
+pinned Server JAR 编译项目自带的 Probe。
+
+### 参数语义
+
+- `--mod-jar`：必填。已构建的发布 JAR，是实际注册 Content 和资产字节的权威来源。
+- `--server-jar`：必填。必须通过官方 v159.7 JAR 的固定哈希校验。
+- `--allow-mod-execution`：必填的显式同意。未提供时预检直接失败。
+- `--source`：可选。只静态解析 Java 文件并建立 class/行号来源；不执行 Gradle、
+  Maven、脚本或源代码，不从源码树复制资产。
+- `--runtime-timeout`：原 Mod 加载与快照子进程的有效超时。超时时终止子进程树。
+- `--server-timeout`：每次候选 `DataPatcher` 试验、最终 Server 发现和最终
+  `DataPatcher.apply` 子进程的有效超时。
+- `--hybrid-max-rounds`：源码候选单调筛选的最大候选轮数；基础 runtime-only 验证不消耗该轮数。
+- `--mod-id`：仅在 Mod 描述符检测有歧义时覆盖内部 Mod 名。
+- `--overwrite`：只清理该输出目录中由 `runtime-convert` 管理的旧产物，不跟随符号链接。
+
+## 安全模型
+
+`--allow-mod-execution` 不是普通的确认提示，而是一条信任边界：
+
+- 输入 Mod JAR 会以当前用户的文件、网络和 JVM 权限执行；
+- 官方 Server JAR 也会执行；
+- 独立 JVM、一次性 data/config 目录、堆限额、快照字节预算和超时只是故障隔离，
+  **不是恶意代码沙箱**；
+- 源码输入不执行，但仍有 ZIP 路径、展开大小、文件数、单文件和 AST 产物预算。
+
+对不信任的 Mod，应在用户自行管理的 VM/容器中运行整个 CLI，而不是将该命令
+暴露为公共 Web 服务。
+
+## 实际管线
+
+### 1. 预检和输入指纹
+
+管线检查路径、显式执行同意、超时/轮次参数，并记录 Mod JAR 与 Server JAR
+的 SHA-256。映射前、打包前和最终验证前会重新校验指纹，防止转换期间输入被替换。
+
+### 2. 独立 JVM 真实加载
+
+CLI 启动 `bridge-runtime-extractor`；extractor 再启动隔离的 Mindustry worker。受信 Probe
+在原版 Content 注册表为空时安装只增加观测能力的 `ContentLoader` 子类，不使用
+javaagent，不修改输入 Mod 字节码。
+
+每个目标 Mod Content 保留：
+
+1. `PRE_CONTENT_INIT`：内容已注册，`Content.init()` 尚未执行；
+2. `POST_CONTENT_INIT`：`Content.init()/postInit()` 已执行；
+3. `FINAL_AFTER_MOD_INIT`：全部 `Mod.init()` 和 `ServerLoadEvent` handler 获得执行机会后，
+   再通过应用队列延后冻结最终快照。
+
+### 3. 动态 mapper
+
+当前默认 `RuntimeSnapshotV2MappingStage` 已接通到正式打包与验证。它从三阶段
+typed snapshot 生成：
+
+- `Item`；
+- `Liquid` / `CellLiquid`；
+- `StatusEffect`；
+- 来自发布 JAR 的 bundle、sprite、sound、music。
+
+Block/Unit 根对象已有有界字段快照，但纯动态 mapper 当前仍不将其生成为 DP；
+嵌套 Weapon/Bullet/Ability/Draw/Consume 等也没有通用对象图还原。
+
+### 4. 可选源码候选
+
+提供 `--source` 时，静态导出的 Block/Unit 声明必须通过所有关联门槛：
+
+- 动态 mapper 已将对应运行时 Content 明确标为 `UNSUPPORTED`；
+- kind、名称、输出路径、命名空间和官方 `ClassMap` fallback 精确匹配；
+- 源文件路径经严格规范化，源文件未出现 parse failure 或 error diagnostic；
+- 候选声明的正行号必须存在于 source index 关联的发布 JAR class `LineNumberTable`
+  中，且 class entry 必须真实存在于权威 JAR；
+- 不使用模糊 path alias，不采用源码资产。
+
+通过来源关联只能证明“此数据声明对应发布 class”，不能证明 Java 行为已迁移。
+
+### 5. DataPatcher 单调筛选
+
+候选阶段先用官方 `DataPatcher.apply` 验证 runtime-only base，且要求零 failed、零 warning。
+然后对全量候选执行严格的减小集合筛选：
+
+1. 只允许 `DATA_PATCH_CONTENT_FAILED`、`DATA_PATCH_APPLY_WARNING`、
+   `DATA_ASSET_READ_FAILED` 中可精确归属到候选输出路径的诊断移除候选；
+2. 移除后再次 apply，用后续轮次发现依赖闭包失效；
+3. 任何无法归属、Harness/协议/超时/打包异常或轮次不收敛，都不猜测删除对象；
+4. 不能安全完成候选归因时，保留未改动的 runtime-only base，并将候选标记为
+   rejected/unresolved。
+
+该筛选只为候选分类，不取代最终验证。
+
+### 6. 正式打包与最终 apply
+
+定稿的 `RuntimePreparedConversion` 交给 `BridgeConverter.convertRuntimePrepared`，复用现有路径
+冲突检查、命名空间处理、贴图/音频/bundle 处理、确定性 `server-assets/` 和 ZIP 打包。
+
+正式产物会再次使用完整 JAR 权威资产执行：
+
+1. `Mindustry1597StructuralValidator`；
+2. Server 资产目录发现；
+3. 官方 v159.7 `DataPatcher.apply`。
+
+最终 apply 失败或产生 warning 时，产物不得被报告为已验证成功。候选试验通过也不代表
+炮塔开火、工厂生产、单位 AI/实体、Desktop atlas、音频解码、地图导入或存档重开已验证。
+
+## 资产与 Java 行为边界
+
+- 发布 JAR 始终是 bundle/sprite/sound/music 字节的唯一权威；
+- 源码目录中同名、更新或“更完整”的资产不得覆盖 JAR；
+- 候选 HJSON 被接受只表示官方 parser/apply 可接受该数据声明；
+- Java 方法覆写、lambda/callback、custom build class、自定义实体/AI、网络与 GUI 行为不会
+  被 DP 通用迁移；
+- 被采用的候选仍以 `DEGRADED` 报告，对应 `.class` 的原文件级结果不会因“数据声明
+  被补充”而伪装成 Java 行为已转换，并保留 `HYBRID_EXECUTABLE_BEHAVIOR_UNMIGRATED`。
+
+## 产物
+
+```text
+<output>/
+  runtime-snapshot.json
+  runtime-mapping.json
+  source-index-report.json                     # 提供 --source 且索引成功时
+  hybrid-report.json                           # 运行混合候选阶段时
+  runtime-pipeline.json
+  <mod-name>-dp-v159.7.zip
+  server-assets/
+  report.json
+  report.md
+  logs/
+    conversion.log
+    runtime-extractor.log
+    runtime-extractor-command.txt
+    runtime-work/run-.../
+      headless.log
+      registration-traces.tsv
+      registration-phases.tsv
+      snapshot-pre-content-init.tsv
+      snapshot-post-content-init.tsv
+      snapshot-final-after-mod-init.tsv
+    hybrid-selection/attempt-.../data-patch-apply.log
+    server-asset-discovery.log
+    data-patch-apply.log
+```
+
+`runtime-pipeline.json` 记录每个阶段的 passed/failed/notRun 与产物。`runtime-mapping.json`
+记录动态映射、降级和 unsupported；`hybrid-report.json` 记录候选发现、每轮 apply、
+accepted/rejected/unresolved；`report.json` / `report.md` 以正式打包与最终 apply 为准。
+
+## New Horizon 2.2.1 自动 E2E
+
+已用发布 JAR + 对应源码 ZIP 运行完整 `runtime-convert --source`：
+
+```text
+work/runtime-convert-new-horizon-final2-20260801/
+```
+
+| 阶段 | 结果 |
+|---|---:|
+| runtime 真实注册 | 382 |
+| 动态 Item/Liquid/StatusEffect | 56 |
+| DataPatcher-eligible Block/Unit 候选 | 141（131 Block + 10 Unit） |
+| 单调筛选接受 | 87（85 Block + 2 Unit） |
+| 正式 content 文件 | 143 |
+| 正式外部资产 | 1635 |
+| 最终 DataPatcher failed / warnings | 0 / 0 |
+| 最终 report error | 0 |
+
+`runtime-pipeline.json` 的 extraction、source index、mapping、hybrid selection、packaging 与
+DP validation 阶段均为 `passed`。该结果复现了早期 143 Content 手工基线，但仍仅证明
+管线和官方 parser/apply 可接受，不代表 Java 方法或实际地图玩法已完全等价。
+
+## 成功语义
+
+`runtime-convert` 返回 `completed` 只表示：
+
+- 官方 pinned v159.7 加载与三阶段快照完成；
+- mapper/可选候选阶段产生了至少一个内容声明；
+- 正式 ZIP 与 `server-assets/` 打包完成；
+- 结构、Server 资产发现和最终 `DataPatcher.apply` 通过。
+
+它不等于“无损转换”或“地图中所有玩法已证明等价”。用户仍需实际导入客户端，
+并在带核心/无核心地图、存档重开、单位、炮塔和工厂场景中验证。

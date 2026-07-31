@@ -18,13 +18,16 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.jar.JarEntry;
@@ -43,6 +46,9 @@ import javax.tools.ToolProvider;
  * JVM process privileges.</p>
  */
 public final class RuntimeExtractorMain {
+    private static final long DEFAULT_MAX_HEAP_MIB = 1_024L;
+    private static final long DEFAULT_MAX_SNAPSHOT_MIB = 256L;
+    private static final long MIB = 1024L * 1024L;
     private static final DateTimeFormatter RUN_STAMP =
         DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss", Locale.ROOT).withZone(ZoneOffset.UTC);
     private static final Pattern MOD_NAME = Pattern.compile(
@@ -106,6 +112,15 @@ public final class RuntimeExtractorMain {
         if (timeoutSeconds <= 0L) {
             throw new IllegalArgumentException("--timeout-seconds must be positive.");
         }
+        long maxHeapMib = boundedLongOption(arguments, "max-heap-mib", DEFAULT_MAX_HEAP_MIB, 256L, 16_384L);
+        long maxSnapshotMib = boundedLongOption(
+            arguments,
+            "max-snapshot-mib",
+            DEFAULT_MAX_SNAPSHOT_MIB,
+            32L,
+            4_096L
+        );
+        long maxSnapshotBytes = Math.multiplyExact(maxSnapshotMib, MIB);
 
         Path workBase = arguments.path("work-dir", Path.of("work", "runtime-extractor"));
         Files.createDirectories(workBase);
@@ -125,6 +140,12 @@ public final class RuntimeExtractorMain {
         Path traceFile = runDirectory.resolve("registration-traces.tsv").toAbsolutePath().normalize();
         Path phaseFile = runDirectory.resolve("registration-phases.tsv").toAbsolutePath().normalize();
         Path trackerStatusFile = runDirectory.resolve("tracker-status.txt").toAbsolutePath().normalize();
+        Path preContentInitSnapshotFile =
+            runDirectory.resolve("snapshot-pre-content-init.tsv").toAbsolutePath().normalize();
+        Path postContentInitSnapshotFile =
+            runDirectory.resolve("snapshot-post-content-init.tsv").toAbsolutePath().normalize();
+        Path finalSnapshotFile =
+            runDirectory.resolve("snapshot-final-after-mod-init.tsv").toAbsolutePath().normalize();
         Path probeJar = modsDirectory.resolve("000-dpbridge-runtime-trace-probe.jar");
         compileRuntimeProbe(serverJar, runDirectory, probeJar);
 
@@ -137,6 +158,8 @@ public final class RuntimeExtractorMain {
             System.getProperty("path.separator") + serverJar.toAbsolutePath().normalize();
         List<String> command = List.of(
             javaExecutable,
+            "-Xms64m",
+            "-Xmx" + maxHeapMib + "m",
             "-Djava.awt.headless=true",
             "-Dfile.encoding=UTF-8",
             "-Dstdout.encoding=UTF-8",
@@ -145,6 +168,10 @@ public final class RuntimeExtractorMain {
             "-Dmoddpbridge.runtimeTraceFile=" + traceFile,
             "-Dmoddpbridge.runtimePhaseFile=" + phaseFile,
             "-Dmoddpbridge.runtimeTrackerStatusFile=" + trackerStatusFile,
+            "-Dmoddpbridge.runtimePreContentInitSnapshotFile=" + preContentInitSnapshotFile,
+            "-Dmoddpbridge.runtimePostContentInitSnapshotFile=" + postContentInitSnapshotFile,
+            "-Dmoddpbridge.runtimeFinalSnapshotFile=" + finalSnapshotFile,
+            "-Dmoddpbridge.runtimeMaxSnapshotBytes=" + maxSnapshotBytes,
             "-cp",
             classPath,
             RuntimeExtractorMain.class.getName(),
@@ -160,7 +187,15 @@ public final class RuntimeExtractorMain {
             "--phase-file",
             phaseFile.toString(),
             "--tracker-status-file",
-            trackerStatusFile.toString()
+            trackerStatusFile.toString(),
+            "--pre-content-init-snapshot-file",
+            preContentInitSnapshotFile.toString(),
+            "--post-content-init-snapshot-file",
+            postContentInitSnapshotFile.toString(),
+            "--final-snapshot-file",
+            finalSnapshotFile.toString(),
+            "--max-snapshot-bytes",
+            Long.toString(maxSnapshotBytes)
         );
         Files.writeString(commandLog, renderCommand(command) + System.lineSeparator(), StandardCharsets.UTF_8);
 
@@ -170,6 +205,8 @@ public final class RuntimeExtractorMain {
         System.out.println("Detected Mod ID: " + modId);
         System.out.println("Isolated run directory: " + runDirectory.toAbsolutePath().normalize());
         System.out.println("Runtime tracker probe: " + probeJar.toAbsolutePath().normalize());
+        System.out.println("Worker max heap: " + maxHeapMib + " MiB");
+        System.out.println("Snapshot artifact limit: " + maxSnapshotMib + " MiB");
         System.out.println("Headless log: " + headlessLog.toAbsolutePath().normalize());
 
         ProcessBuilder builder = new ProcessBuilder(command)
@@ -199,9 +236,20 @@ public final class RuntimeExtractorMain {
         }
 
         try {
-            TrackerData tracker = readTrackerData(traceFile, phaseFile, trackerStatusFile);
+            TrackerData tracker = readTrackerData(
+                traceFile,
+                phaseFile,
+                trackerStatusFile,
+                preContentInitSnapshotFile,
+                postContentInitSnapshotFile,
+                finalSnapshotFile
+            );
             int finalContentCount = readOutputContentCount(output);
             requireCompleteTracker(tracker, finalContentCount);
+            requireSnapshotArtifactBudget(
+                List.of(preContentInitSnapshotFile, postContentInitSnapshotFile, finalSnapshotFile, output),
+                maxSnapshotBytes
+            );
         } catch (IOException | RuntimeException error) {
             System.err.println("ERROR: Runtime tracker validation failed: " + error.getMessage());
             System.err.println("The incomplete snapshot has been retained for diagnosis at " + output);
@@ -219,29 +267,34 @@ public final class RuntimeExtractorMain {
         Path traceFile = arguments.requiredPath("trace-file");
         Path phaseFile = arguments.requiredPath("phase-file");
         Path trackerStatusFile = arguments.requiredPath("tracker-status-file");
+        Path preContentInitSnapshotFile = arguments.requiredPath("pre-content-init-snapshot-file");
+        Path postContentInitSnapshotFile = arguments.requiredPath("post-content-init-snapshot-file");
+        Path finalSnapshotFile = arguments.requiredPath("final-snapshot-file");
+        long maxSnapshotBytes = arguments.longValue("max-snapshot-bytes", DEFAULT_MAX_SNAPSHOT_MIB * MIB);
+        if (maxSnapshotBytes <= 0L) {
+            throw new IllegalArgumentException("--max-snapshot-bytes must be positive.");
+        }
 
         Class<?> consType = Class.forName("arc.func.Cons");
         Class<?> serverLoadEvent = Class.forName("mindustry.game.EventType$ServerLoadEvent");
+        AtomicBoolean finalCaptureScheduled = new AtomicBoolean();
         Object listener = Proxy.newProxyInstance(
             RuntimeExtractorMain.class.getClassLoader(),
             new Class<?>[]{consType},
             (proxy, method, values) -> {
-                if ("get".equals(method.getName())) {
-                    try {
-                        dumpRegisteredContent(
-                            output,
-                            modId,
-                            inputModJar,
-                            readTrackerData(traceFile, phaseFile, trackerStatusFile)
-                        );
-                        System.out.println("RUNTIME_EXTRACTOR_OUTPUT=" + output);
-                        System.out.flush();
-                        System.exit(0);
-                    } catch (Throwable error) {
-                        error.printStackTrace(System.err);
-                        System.err.flush();
-                        System.exit(71);
-                    }
+                if ("get".equals(method.getName()) && finalCaptureScheduled.compareAndSet(false, true)) {
+                    scheduleAfterServerLoadHandlers(() -> finishWorkerExtraction(
+                        output,
+                        modId,
+                        inputModJar,
+                        traceFile,
+                        phaseFile,
+                        trackerStatusFile,
+                        preContentInitSnapshotFile,
+                        postContentInitSnapshotFile,
+                        finalSnapshotFile,
+                        maxSnapshotBytes
+                    ));
                 }
                 if ("toString".equals(method.getName())) return "mod-dp-bridge-runtime-extractor";
                 if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
@@ -261,81 +314,216 @@ public final class RuntimeExtractorMain {
         return 0;
     }
 
+    /**
+     * Defers twice: the first application turn lets ServerLoadEvent finish and drains work posted by
+     * its handlers; the second turn freezes the final snapshot. This avoids terminating the JVM from
+     * the first listener in the event sequence.
+     */
+    private static void scheduleAfterServerLoadHandlers(Runnable capture) {
+        try {
+            postToApplication(() -> postToApplicationUnchecked(capture));
+        } catch (Throwable error) {
+            failWorkerExtraction("Could not defer the final runtime snapshot after ServerLoadEvent.", error);
+        }
+    }
+
+    private static void postToApplicationUnchecked(Runnable runnable) {
+        try {
+            postToApplication(runnable);
+        } catch (Throwable error) {
+            failWorkerExtraction("Could not schedule the final runtime snapshot application turn.", error);
+        }
+    }
+
+    private static void failWorkerExtraction(String message, Throwable error) {
+        System.err.println(message);
+        error.printStackTrace(System.err);
+        System.err.flush();
+        System.exit(71);
+    }
+
+    private static void postToApplication(Runnable runnable) throws ReflectiveOperationException {
+        Class<?> core = Class.forName("arc.Core");
+        Object application = core.getField("app").get(null);
+        if (application == null) throw new IllegalStateException("arc.Core.app is null at ServerLoadEvent.");
+        Class<?> applicationType = Class.forName("arc.Application");
+        applicationType.getMethod("post", Runnable.class).invoke(application, runnable);
+    }
+
+    private static void finishWorkerExtraction(
+        Path output,
+        String modId,
+        String inputModJar,
+        Path traceFile,
+        Path phaseFile,
+        Path trackerStatusFile,
+        Path preContentInitSnapshotFile,
+        Path postContentInitSnapshotFile,
+        Path finalSnapshotFile,
+        long maxSnapshotBytes
+    ) {
+        try {
+            captureFinalSnapshotViaProbe();
+            dumpRegisteredContent(
+                output,
+                modId,
+                inputModJar,
+                readTrackerData(
+                    traceFile,
+                    phaseFile,
+                    trackerStatusFile,
+                    preContentInitSnapshotFile,
+                    postContentInitSnapshotFile,
+                    finalSnapshotFile
+                ),
+                preContentInitSnapshotFile,
+                postContentInitSnapshotFile,
+                finalSnapshotFile,
+                maxSnapshotBytes
+            );
+            System.out.println("RUNTIME_EXTRACTOR_OUTPUT=" + output);
+            System.out.flush();
+            System.exit(0);
+        } catch (Throwable error) {
+            error.printStackTrace(System.err);
+            System.err.flush();
+            System.exit(71);
+        }
+    }
+
+    private static void captureFinalSnapshotViaProbe() throws Exception {
+        Class<?> vars = Class.forName("mindustry.Vars");
+        Object mods = vars.getField("mods").get(null);
+        Object loadedProbe = mods.getClass().getMethod("getMod", String.class)
+            .invoke(mods, "dpbridge-runtime-trace-probe");
+        if (loadedProbe == null) {
+            throw new IllegalStateException("Runtime tracker Probe Mod is not present at ServerLoadEvent.");
+        }
+        Object probeMain = loadedProbe.getClass().getField("main").get(loadedProbe);
+        if (probeMain == null) {
+            throw new IllegalStateException("Runtime tracker Probe Mod has no main instance.");
+        }
+        probeMain.getClass().getMethod("captureFinalAfterModInit").invoke(probeMain);
+    }
+
     private static void dumpRegisteredContent(
         Path output,
         String targetMod,
         String inputModJar,
-        TrackerData tracker
+        TrackerData tracker,
+        Path preContentInitSnapshotFile,
+        Path postContentInitSnapshotFile,
+        Path finalSnapshotFile,
+        long maxSnapshotBytes
     ) throws Exception {
         Class<?> vars = Class.forName("mindustry.Vars");
         Object contentLoader = vars.getField("content").get(null);
-        Object contentMap = contentLoader.getClass().getMethod("getContentMap").invoke(contentLoader);
+        Class<?> contentLoaderType = Class.forName("mindustry.core.ContentLoader");
+        if (!contentLoaderType.isInstance(contentLoader)) {
+            throw new IllegalStateException("Vars.content is not a target ContentLoader instance.");
+        }
+        Object contentMap = readDeclaredField(contentLoaderType, "contentMap", contentLoader);
+        Class<?> seqType = Class.forName("arc.struct.Seq");
+        java.lang.reflect.Field seqSize = seqType.getField("size");
+        java.lang.reflect.Field seqItems = seqType.getField("items");
+        Class<?> contentTypeClass = Class.forName("mindustry.ctype.ContentType");
+        Object contentTypes = contentTypeClass.getField("all").get(null);
+        Class<?> contentClass = Class.forName("mindustry.ctype.Content");
+        Class<?> mappableContentClass = Class.forName("mindustry.ctype.MappableContent");
+        Class<?> loadedModClass = Class.forName("mindustry.mod.Mods$LoadedMod");
+        java.lang.reflect.Field contentMinfo = contentClass.getField("minfo");
+        Class<?> modContentInfoClass = contentMinfo.getType();
+        java.lang.reflect.Field contentId = contentClass.getField("id");
+        java.lang.reflect.Field contentName = mappableContentClass.getField("name");
+        java.lang.reflect.Field minfoMod = modContentInfoClass.getField("mod");
+        java.lang.reflect.Field loadedModName = loadedModClass.getField("name");
         List<ContentRow> rows = new ArrayList<>();
         Map<String, Integer> counts = new TreeMap<>();
         ModInfo targetInfo = null;
+        Set<String> finalContentKeys = new LinkedHashSet<>();
 
         int mapLength = Array.getLength(contentMap);
         for (int mapIndex = 0; mapIndex < mapLength; mapIndex++) {
             Object sequence = Array.get(contentMap, mapIndex);
-            int size = sequence.getClass().getField("size").getInt(sequence);
-            Method get = sequence.getClass().getMethod("get", int.class);
+            if (!seqType.isInstance(sequence)) {
+                throw new IllegalStateException("ContentLoader.contentMap contains a non-Seq value.");
+            }
+            int size = seqSize.getInt(sequence);
+            Object items = seqItems.get(sequence);
+            String contentType = ((Enum<?>)Array.get(contentTypes, mapIndex)).name();
             for (int index = 0; index < size; index++) {
-                Object content = get.invoke(sequence, index);
-                Object minfo = content.getClass().getField("minfo").get(content);
-                Object loadedMod = minfo.getClass().getField("mod").get(minfo);
+                Object content = Array.get(items, index);
+                if (!contentClass.isInstance(content)) {
+                    throw new IllegalStateException("ContentLoader registry contains a non-Content value.");
+                }
+                Object minfo = contentMinfo.get(content);
+                if (!modContentInfoClass.isInstance(minfo)) {
+                    throw new IllegalStateException("Content.minfo is not the target ModContentInfo type.");
+                }
+                Object loadedMod = minfoMod.get(minfo);
                 if (loadedMod == null) continue;
+                if (!loadedModClass.isInstance(loadedMod)) {
+                    throw new IllegalStateException("Content.minfo.mod is not the target LoadedMod type.");
+                }
+                String loadedName = requireString(loadedModName.get(loadedMod), "LoadedMod.name");
+                if (!loadedName.equalsIgnoreCase(targetMod)) continue;
 
-                ModInfo mod = readModInfo(loadedMod);
-                if (!mod.name().equalsIgnoreCase(targetMod)) continue;
+                ModInfo mod = readModInfo(loadedMod, loadedModClass, inputModJar);
                 targetInfo = mod;
 
-                Object type = content.getClass().getMethod("getContentType").invoke(content);
-                String contentType = ((Enum<?>) type).name();
-                String name;
-                try {
-                    name = String.valueOf(content.getClass().getField("name").get(content));
-                } catch (NoSuchFieldException ignored) {
-                    name = String.valueOf(content);
+                int id = contentId.getShort(content);
+                String name = mappableContentClass.isInstance(content)
+                    ? requireString(contentName.get(content), "MappableContent.name")
+                    : content.getClass().getName() + "#" + id;
+                String contentKey = contentKey(contentType, name);
+                if (!finalContentKeys.add(contentKey)) {
+                    throw new IllegalStateException("Duplicate final Content key: " + contentType + "/" + name);
                 }
-                int id = content.getClass().getField("id").getInt(content);
                 rows.add(new ContentRow(
                     name,
                     contentType,
                     content.getClass().getName(),
                     id,
                     mod,
-                    tracker.registrationStacks().getOrDefault(name, List.of())
+                    tracker.registrationStacks().getOrDefault(contentKey, List.of()),
+                    tracker.preContentInitSnapshots().get(contentKey),
+                    tracker.postContentInitSnapshots().get(contentKey),
+                    tracker.finalAfterModInitSnapshots().get(contentKey)
                 ));
                 counts.merge(contentType, 1, Integer::sum);
             }
         }
 
-        requireCompleteTracker(tracker, rows.size());
+        requireCompleteTracker(tracker, finalContentKeys);
 
         rows.sort(Comparator
             .comparing(ContentRow::contentType)
             .thenComparing(ContentRow::name)
             .thenComparing(ContentRow::runtimeClass));
         Files.createDirectories(output.getParent());
-        Files.writeString(
-            output,
-            toJson(targetMod, inputModJar, targetInfo, readGameVersion(), tracker, counts, rows),
-            StandardCharsets.UTF_8
+        byte[] outputBytes = toJson(targetMod, inputModJar, targetInfo, readGameVersion(), tracker, counts, rows)
+            .getBytes(StandardCharsets.UTF_8);
+        requireSnapshotArtifactBudget(
+            List.of(preContentInitSnapshotFile, postContentInitSnapshotFile, finalSnapshotFile),
+            maxSnapshotBytes - outputBytes.length
+        );
+        Files.write(output, outputBytes);
+        requireSnapshotArtifactBudget(
+            List.of(preContentInitSnapshotFile, postContentInitSnapshotFile, finalSnapshotFile, output),
+            maxSnapshotBytes
         );
     }
 
-    private static ModInfo readModInfo(Object loadedMod) throws Exception {
-        String name = String.valueOf(loadedMod.getClass().getField("name").get(loadedMod));
-        Object metadata = loadedMod.getClass().getField("meta").get(loadedMod);
-        String displayName = nullableField(metadata, "displayName");
-        String version = nullableField(metadata, "version");
-        Object file = loadedMod.getClass().getField("file").get(loadedMod);
-        String source;
-        try {
-            source = String.valueOf(file.getClass().getMethod("absolutePath").invoke(file));
-        } catch (ReflectiveOperationException ignored) {
-            source = String.valueOf(file);
+    private static ModInfo readModInfo(Object loadedMod, Class<?> loadedModClass, String inputModJar) throws Exception {
+        String name = requireString(loadedModClass.getField("name").get(loadedMod), "LoadedMod.name");
+        Object metadata = loadedModClass.getField("meta").get(loadedMod);
+        Class<?> metadataClass = Class.forName("mindustry.mod.Mods$ModMeta");
+        if (!metadataClass.isInstance(metadata)) {
+            throw new IllegalStateException("LoadedMod.meta is not the target ModMeta type.");
         }
+        String displayName = nullableStringField(metadataClass, metadata, "displayName");
+        String version = nullableStringField(metadataClass, metadata, "version");
+        String source = inputModJar == null ? "<runtime-input-unavailable>" : inputModJar;
         return new ModInfo(name, displayName, version, source);
     }
 
@@ -343,41 +531,51 @@ public final class RuntimeExtractorMain {
         try {
             Class<?> version = Class.forName("mindustry.core.Version");
             return new GameVersion(
-                String.valueOf(version.getField("type").get(null)),
-                String.valueOf(version.getField("modifier").get(null)),
+                requireString(version.getField("type").get(null), "Version.type"),
+                requireString(version.getField("modifier").get(null), "Version.modifier"),
                 version.getField("number").getInt(null),
                 version.getField("build").getInt(null),
                 version.getField("revision").getInt(null),
-                String.valueOf(version.getField("commitHash").get(null))
+                nullableString(version.getField("commitHash").get(null), "Version.commitHash")
             );
-        } catch (ReflectiveOperationException error) {
+        } catch (ReflectiveOperationException | IllegalStateException error) {
             return new GameVersion("unknown", "unknown", 0, 0, 0, "unknown");
         }
     }
 
-    private static TrackerData readTrackerData(Path traceFile, Path phaseFile, Path statusFile) throws IOException {
+    private static TrackerData readTrackerData(
+        Path traceFile,
+        Path phaseFile,
+        Path statusFile,
+        Path preContentInitSnapshotFile,
+        Path postContentInitSnapshotFile,
+        Path finalSnapshotFile
+    ) throws IOException {
         Map<String, List<String>> registrationStacks = new LinkedHashMap<>();
         if (Files.isRegularFile(traceFile)) {
             for (String line : Files.readAllLines(traceFile, StandardCharsets.UTF_8)) {
                 if (line.isBlank()) continue;
                 String[] columns = line.split("\\t", -1);
-                if (columns.length != 2) continue;
-                String name = decodeBase64(columns[0]);
-                String stack = decodeBase64(columns[1]);
+                if (columns.length != 3) continue;
+                String contentType = decodeBase64(columns[0]);
+                String name = decodeBase64(columns[1]);
+                String stack = decodeBase64(columns[2]);
                 List<String> frames = stack.lines().filter(value -> !value.isBlank()).toList();
-                if (!frames.isEmpty()) registrationStacks.put(name, frames);
+                registrationStacks.put(contentKey(contentType, name), frames);
             }
         }
 
-        Integer preInit = null;
-        Integer postInit = null;
+        Integer preContentInit = null;
+        Integer postContentInit = null;
+        Integer finalAfterModInit = null;
         if (Files.isRegularFile(phaseFile)) {
             for (String line : Files.readAllLines(phaseFile, StandardCharsets.UTF_8)) {
                 String[] columns = line.split("\\t", -1);
                 if (columns.length != 2) continue;
                 try {
-                    if ("PRE_INIT".equals(columns[0])) preInit = Integer.parseInt(columns[1]);
-                    if ("POST_INIT".equals(columns[0])) postInit = Integer.parseInt(columns[1]);
+                    if ("PRE_CONTENT_INIT".equals(columns[0])) preContentInit = Integer.parseInt(columns[1]);
+                    if ("POST_CONTENT_INIT".equals(columns[0])) postContentInit = Integer.parseInt(columns[1]);
+                    if ("FINAL_AFTER_MOD_INIT".equals(columns[0])) finalAfterModInit = Integer.parseInt(columns[1]);
                 } catch (NumberFormatException ignored) {
                     // Preserve the rest of the runtime result even if a phase marker is malformed.
                 }
@@ -387,7 +585,31 @@ public final class RuntimeExtractorMain {
         String status = Files.isRegularFile(statusFile)
             ? Files.readString(statusFile, StandardCharsets.UTF_8).trim()
             : "missing";
-        return new TrackerData(status, preInit, postInit, registrationStacks);
+        return new TrackerData(
+            status,
+            preContentInit,
+            postContentInit,
+            finalAfterModInit,
+            registrationStacks,
+            readSnapshotFile(preContentInitSnapshotFile),
+            readSnapshotFile(postContentInitSnapshotFile),
+            readSnapshotFile(finalSnapshotFile)
+        );
+    }
+
+    static Map<String, String> readSnapshotFile(Path file) throws IOException {
+        Map<String, String> snapshots = new LinkedHashMap<>();
+        if (!Files.isRegularFile(file)) return snapshots;
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (line.isBlank()) continue;
+            String[] columns = line.split("\\t", -1);
+            if (columns.length != 3) continue;
+            String contentType = decodeBase64(columns[0]);
+            String name = decodeBase64(columns[1]);
+            String json = decodeBase64(columns[2]);
+            snapshots.put(contentKey(contentType, name), json);
+        }
+        return snapshots;
     }
 
     private static int readOutputContentCount(Path output) throws IOException {
@@ -406,17 +628,94 @@ public final class RuntimeExtractorMain {
         if (!"installed".equals(tracker.status())) {
             throw new IllegalStateException("tracker status is '" + tracker.status() + "', expected 'installed'.");
         }
-        if (tracker.preInitContentCount() == null) {
-            throw new IllegalStateException("PRE_INIT content count is missing.");
+        if (tracker.preContentInitCount() == null) {
+            throw new IllegalStateException("PRE_CONTENT_INIT content count is missing.");
         }
-        if (tracker.postInitContentCount() == null) {
-            throw new IllegalStateException("POST_INIT content count is missing.");
+        if (tracker.postContentInitCount() == null) {
+            throw new IllegalStateException("POST_CONTENT_INIT content count is missing.");
         }
-        int tracedContentCount = tracker.registrationStacks().size();
-        if (tracedContentCount != finalContentCount) {
+        if (tracker.finalAfterModInitCount() == null) {
+            throw new IllegalStateException("FINAL_AFTER_MOD_INIT content count is missing.");
+        }
+        requirePhaseSnapshotCount(
+            "PRE_CONTENT_INIT",
+            tracker.preContentInitCount(),
+            tracker.preContentInitSnapshots()
+        );
+        requirePhaseSnapshotCount(
+            "POST_CONTENT_INIT",
+            tracker.postContentInitCount(),
+            tracker.postContentInitSnapshots()
+        );
+        requirePhaseSnapshotCount(
+            "FINAL_AFTER_MOD_INIT",
+            tracker.finalAfterModInitCount(),
+            tracker.finalAfterModInitSnapshots()
+        );
+        if (tracker.finalAfterModInitCount() != finalContentCount) {
             throw new IllegalStateException(
-                "registration trace count " + tracedContentCount +
+                "FINAL_AFTER_MOD_INIT phase count " + tracker.finalAfterModInitCount() +
                     " does not match final target content count " + finalContentCount + "."
+            );
+        }
+        requireSnapshotCount("FINAL_AFTER_MOD_INIT", tracker.finalAfterModInitSnapshots(), finalContentCount);
+        if (!tracker.registrationStacks().keySet().equals(tracker.finalAfterModInitSnapshots().keySet())) {
+            throw new IllegalStateException(
+                "registration trace keys do not exactly match FINAL_AFTER_MOD_INIT snapshot keys."
+            );
+        }
+        requireMonotonicKeys(
+            "PRE_CONTENT_INIT",
+            tracker.preContentInitSnapshots().keySet(),
+            "POST_CONTENT_INIT",
+            tracker.postContentInitSnapshots().keySet()
+        );
+        requireMonotonicKeys(
+            "POST_CONTENT_INIT",
+            tracker.postContentInitSnapshots().keySet(),
+            "FINAL_AFTER_MOD_INIT",
+            tracker.finalAfterModInitSnapshots().keySet()
+        );
+    }
+
+    static void requireCompleteTracker(TrackerData tracker, Set<String> finalContentKeys) {
+        requireCompleteTracker(tracker, finalContentKeys.size());
+        if (!tracker.finalAfterModInitSnapshots().keySet().equals(finalContentKeys)) {
+            throw new IllegalStateException(
+                "FINAL_AFTER_MOD_INIT snapshot keys do not exactly match the final runtime registry keys."
+            );
+        }
+    }
+
+    private static void requirePhaseSnapshotCount(String phase, int phaseCount, Map<String, String> snapshots) {
+        if (phaseCount != snapshots.size()) {
+            throw new IllegalStateException(
+                phase + " phase count " + phaseCount +
+                    " does not match its snapshot row count " + snapshots.size() + "."
+            );
+        }
+    }
+
+    private static void requireSnapshotCount(String phase, Map<String, String> snapshots, int finalContentCount) {
+        if (snapshots.size() != finalContentCount) {
+            throw new IllegalStateException(
+                phase + " snapshot count " + snapshots.size() +
+                    " does not match final target content count " + finalContentCount + "."
+            );
+        }
+    }
+
+    private static void requireMonotonicKeys(
+        String earlierPhase,
+        Set<String> earlierKeys,
+        String laterPhase,
+        Set<String> laterKeys
+    ) {
+        if (!laterKeys.containsAll(earlierKeys)) {
+            Set<String> removed = new LinkedHashSet<>(earlierKeys);
+            removed.removeAll(laterKeys);
+            throw new IllegalStateException(
+                earlierPhase + " contains " + removed.size() + " Content key(s) missing from " + laterPhase + "."
             );
         }
     }
@@ -432,6 +731,7 @@ public final class RuntimeExtractorMain {
         Path sourceRoot = runDirectory.resolve("runtime-probe-source");
         Path classesRoot = runDirectory.resolve("runtime-probe-classes");
         Path sourceFile = sourceRoot.resolve("bridgeprobe/RuntimeTraceProbe.java");
+        Path snapshotSupportFile = sourceRoot.resolve("bridgeprobe/RuntimeSnapshotSupport.java");
         Path compilerLog = runDirectory.resolve("runtime-probe-compile.log");
         Files.createDirectories(sourceFile.getParent());
         Files.createDirectories(classesRoot);
@@ -444,13 +744,22 @@ public final class RuntimeExtractorMain {
             template = new String(input.readAllBytes(), StandardCharsets.UTF_8);
         }
         Files.writeString(sourceFile, template, StandardCharsets.UTF_8);
+        String snapshotSupportTemplate;
+        try (InputStream input = RuntimeExtractorMain.class.getResourceAsStream("/runtime-snapshot-support.java.template")) {
+            if (input == null) {
+                throw new IOException("Bundled runtime snapshot support source template is missing.");
+            }
+            snapshotSupportTemplate = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        Files.writeString(snapshotSupportFile, snapshotSupportTemplate, StandardCharsets.UTF_8);
 
         List<String> compilerArguments = List.of(
             "-encoding", "UTF-8",
             "--release", "17",
             "-classpath", serverJar.toAbsolutePath().normalize().toString(),
             "-d", classesRoot.toAbsolutePath().normalize().toString(),
-            sourceFile.toAbsolutePath().normalize().toString()
+            sourceFile.toAbsolutePath().normalize().toString(),
+            snapshotSupportFile.toAbsolutePath().normalize().toString()
         );
         ByteArrayOutputStream compilerOutput = new ByteArrayOutputStream();
         int compileExit = compiler.run(null, compilerOutput, compilerOutput, compilerArguments.toArray(String[]::new));
@@ -493,6 +802,10 @@ public final class RuntimeExtractorMain {
         return new String(Base64.getUrlDecoder().decode(value), StandardCharsets.UTF_8);
     }
 
+    private static String contentKey(String contentType, String name) {
+        return contentType + "\u0000" + name;
+    }
+
     private static String toJson(
         String targetMod,
         String inputModJar,
@@ -504,7 +817,7 @@ public final class RuntimeExtractorMain {
     ) {
         StringBuilder json = new StringBuilder(64_000);
         json.append("{\n");
-        appendProperty(json, 1, "schemaVersion", "1", false, true);
+        appendProperty(json, 1, "schemaVersion", "2", false, true);
         appendProperty(json, 1, "generatedAt", quote(Instant.now().toString()), false, true);
         appendProperty(json, 1, "targetMod", quote(targetMod), false, true);
         appendProperty(json, 1, "inputModJar", quoteNullable(inputModJar), false, true);
@@ -521,9 +834,17 @@ public final class RuntimeExtractorMain {
         json.append(",\n");
         json.append("  \"registrationTracker\": {\n");
         appendProperty(json, 2, "status", quote(tracker.status()), true);
-        appendProperty(json, 2, "preInitContentCount", integerOrNull(tracker.preInitContentCount()), true);
-        appendProperty(json, 2, "postInitContentCount", integerOrNull(tracker.postInitContentCount()), true);
-        appendProperty(json, 2, "tracedContentCount", Integer.toString(tracker.registrationStacks().size()), false);
+        appendProperty(json, 2, "preContentInitCount", integerOrNull(tracker.preContentInitCount()), true);
+        appendProperty(json, 2, "postContentInitCount", integerOrNull(tracker.postContentInitCount()), true);
+        appendProperty(json, 2, "finalAfterModInitCount", integerOrNull(tracker.finalAfterModInitCount()), true);
+        appendProperty(json, 2, "tracedContentCount", Integer.toString(tracker.registrationStacks().size()), true);
+        appendProperty(
+            json,
+            2,
+            "typedSnapshotCount",
+            Integer.toString(tracker.finalAfterModInitSnapshots().size()),
+            false
+        );
         json.append("  },\n");
         appendProperty(json, 1, "contentCount", Integer.toString(rows.size()), false, true);
         json.append("  \"countsByType\": {");
@@ -555,7 +876,12 @@ public final class RuntimeExtractorMain {
                 if (frameIndex + 1 < row.registrationStack().size()) json.append(',');
                 json.append('\n');
             }
-            json.append("      ]\n");
+            json.append("      ],\n");
+            json.append("      \"runtimeSnapshots\": {\n");
+            json.append("        \"preContentInit\": ").append(row.preContentInitSnapshot()).append(",\n");
+            json.append("        \"postContentInit\": ").append(row.postContentInitSnapshot()).append(",\n");
+            json.append("        \"finalAfterModInit\": ").append(row.finalAfterModInitSnapshot()).append('\n');
+            json.append("      }\n");
             json.append("    }");
             if (index + 1 < rows.size()) json.append(',');
             json.append('\n');
@@ -658,9 +984,61 @@ public final class RuntimeExtractorMain {
         }
     }
 
-    private static String nullableField(Object target, String name) throws ReflectiveOperationException {
-        Object value = target.getClass().getField(name).get(target);
-        return value == null ? null : String.valueOf(value);
+    private static Object readDeclaredField(Class<?> owner, String name, Object target) throws ReflectiveOperationException {
+        java.lang.reflect.Field field = owner.getDeclaredField(name);
+        if (!field.trySetAccessible()) {
+            throw new IllegalStateException("Could not access target field " + owner.getName() + "#" + name + ".");
+        }
+        return field.get(target);
+    }
+
+    private static String nullableStringField(Class<?> owner, Object target, String name)
+        throws ReflectiveOperationException {
+        return nullableString(owner.getField(name).get(target), owner.getSimpleName() + "." + name);
+    }
+
+    private static String requireString(Object value, String label) {
+        if (!(value instanceof String string)) {
+            throw new IllegalStateException(label + " is not a String.");
+        }
+        return string;
+    }
+
+    private static String nullableString(Object value, String label) {
+        return value == null ? null : requireString(value, label);
+    }
+
+    static void requireSnapshotArtifactBudget(List<Path> files, long maxBytes) throws IOException {
+        if (maxBytes <= 0L) {
+            throw new IllegalStateException("Snapshot artifact byte budget is exhausted before output can be written.");
+        }
+        long total = 0L;
+        for (Path file : files) {
+            if (!Files.isRegularFile(file)) continue;
+            long size = Files.size(file);
+            if (size < 0L || total > maxBytes - size) {
+                throw new IllegalStateException(
+                    "Runtime snapshot artifacts exceed the configured total limit of " + maxBytes + " bytes."
+                );
+            }
+            total += size;
+        }
+    }
+
+    private static long boundedLongOption(
+        Arguments arguments,
+        String name,
+        long defaultValue,
+        long minimum,
+        long maximum
+    ) {
+        long value = arguments.longValue(name, defaultValue);
+        if (value < minimum || value > maximum) {
+            throw new IllegalArgumentException(
+                "--" + name + " must be between " + minimum + " and " + maximum + "."
+            );
+        }
+        return value;
     }
 
     private static void copyProcessOutput(Process process, Path logFile) {
@@ -765,6 +1143,8 @@ public final class RuntimeExtractorMain {
                 [--mod-id <internal-name>] \\
                 [--work-dir <directory>] \\
                 [--timeout-seconds <seconds>] \\
+                [--max-heap-mib <256..16384>] \\
+                [--max-snapshot-mib <32..4096>] \\
                 --allow-mod-execution
             """);
     }
@@ -813,15 +1193,22 @@ public final class RuntimeExtractorMain {
         String runtimeClass,
         int id,
         ModInfo mod,
-        List<String> registrationStack
+        List<String> registrationStack,
+        String preContentInitSnapshot,
+        String postContentInitSnapshot,
+        String finalAfterModInitSnapshot
     ) {
     }
 
     record TrackerData(
         String status,
-        Integer preInitContentCount,
-        Integer postInitContentCount,
-        Map<String, List<String>> registrationStacks
+        Integer preContentInitCount,
+        Integer postContentInitCount,
+        Integer finalAfterModInitCount,
+        Map<String, List<String>> registrationStacks,
+        Map<String, String> preContentInitSnapshots,
+        Map<String, String> postContentInitSnapshots,
+        Map<String, String> finalAfterModInitSnapshots
     ) {
     }
 

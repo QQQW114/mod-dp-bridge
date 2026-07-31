@@ -24,4 +24,6 @@ include(
     "bridge-cli",
     "bridge-web",
     "bridge-runtime-extractor",
+    "bridge-runtime-assets",
+    "bridge-runtime-mapper",
 )

@@ -1,10 +1,17 @@
 # 架构设计
 
-最后更新：2026-07-30 06:05（Asia/Shanghai）
+最后更新：2026-08-01（Asia/Shanghai）
 
 ## 设计目标
 
-`mod-dp-bridge` 是一个确定性、离线、面向服务器的 Mindustry Mod/CP/DP → v159.7 Data Assets 转换器。主干转换不执行输入代码，也不依赖 Agent。核心原则是：**尽力转换、绝不静默丢弃、产物与未转换项同时交付**。
+`mod-dp-bridge` 是一个确定性、离线、面向服务器的 Mindustry Mod/CP/DP → v159.7 Data Assets 转换器。核心原则是：**尽力转换、绝不静默丢弃、产物与未转换项同时交付**。
+
+项目有两条明确分离的入口：
+
+- `convert`：安全静态模式，不执行输入 Mod；
+- `runtime-convert`：当前编译 Java Mod 主线，会在独立 JVM 中真实执行用户明确信任的发布 Mod JAR 和固定官方 Server JAR，必须显式 `--allow-mod-execution`。
+
+独立 JVM 不是安全沙箱。项目不使用 javaagent，动态能力不接入网站。
 
 当前只有一个目标适配器：Mindustry v159.7/B480。旧 Mod 版本号只表示“尽力读取静态数据”，不是对应历史运行时兼容层。
 
@@ -43,7 +50,19 @@ bridge-model
   报告、诊断、清单、fileResults、验证阶段、JSON/Markdown
 
 bridge-java-static
-  JavaParser AST 清单与确定性 Java -> HJSON 静态导出、降级与 contentResults
+  JavaParser AST 静态导出，以及 runtime-guided Block/Unit 候选
+
+bridge-source-index
+  发布 JAR class/资产与可选源码的非执行来源关联
+
+bridge-runtime-extractor
+  官方 v159.7 独立 JVM 加载、三阶段 Vars.content 快照和预算控制
+
+bridge-runtime-assets
+  发布 JAR 资产选择、碰撞处理和来源报告
+
+bridge-runtime-mapper
+  v159.7 快照到 Item/Liquid/Status DP 声明的版本绑定映射
 
 bridge-target-api
   TargetValidator 接口和目标选项
@@ -55,16 +74,56 @@ bridge-target-1597
   v159.7 静态结构验证、可选真实 B480 DataPatcher apply、辅助 Server 资产发现
 
 bridge-cli
-  命令行、日志、报告合并、退出码、失败文件
+  静态/动态命令、子进程、单调 DataPatcher 筛选、日志和报告
 
 bridge-web
-  本地 HTTP API、上传限制、任务队列、独立 CLI 子进程、SSE 日志、静态 Web UI
+  历史本地静态转换 UI；停止主线维护，不承载 runtime-convert
 ```
 
 ## 转换流水线
 
+### `runtime-convert` 当前主线
+
 ```text
-CLI 本地路径，或 Web multipart 上传
+可信发布 Mod JAR + pinned 官方 v159.7 Server JAR
+        |
+        v
+独立 JVM 真实加载 Mod
+        |
+        v
+PRE_CONTENT_INIT / POST_CONTENT_INIT / FINAL_AFTER_MOD_INIT
+三阶段 Vars.content 快照
+        |
+        v
+bridge-runtime-mapper
+  Item / Liquid / StatusEffect
+        |
+        +-- 可选源码 ZIP/目录（只解析 AST，不执行）
+        |       |
+        |       v
+        |   runtime registration + parser fallback
+        |   + JAR class LineNumberTable 严格约束
+        |       |
+        |       v
+        |   Block / Unit 惰性候选
+        |       |
+        |       v
+        |   官方 DataPatcher 单调筛选
+        |
+        v
+发布 JAR 资产 + 确定性正式打包
+        |
+        v
+结构检查 + server discovery + 最终 DataPatcher.apply
+        |
+        v
+仍需 Desktop 地图导入、保存重开和服务器真实地图加载
+```
+
+### `convert` 安全静态流水线
+
+```text
+CLI 本地路径（历史 Web 仅调用此静态入口）
         |
         v
 目录 / ZIP / JAR / JSON / HJSON / JSON5
@@ -129,11 +188,11 @@ Mindustry1597StructuralValidator
 以及服务器实际加载携带 DP 的地图/存档
 ```
 
-Web UI 不进入转换器内部，也不拥有第二套转换语义。`bridge-web` 把上传保存为隔离输入文件，然后启动与命令行相同的 `bridge-cli` 入口；因此 CLI 报告、退出码和安全读取规则仍是转换事实来源。
+`bridge-web` 只保留为历史静态 `convert` 调用层，不承载会执行 Mod 的 `runtime-convert`，也不再作为当前部署目标。
 
 ## 输入读取与安全模型
 
-`SafeSourceReader` 只把输入视为数据：
+静态 `convert` 中，`SafeSourceReader` 只把输入视为数据：
 
 - 目录按相对路径扫描；ZIP/JAR 在内存快照中读取，不执行或安装；
 - 拒绝绝对路径、`..`、路径穿越和异常长路径；
@@ -141,7 +200,7 @@ Web UI 不进入转换器内部，也不拥有第二套转换语义。`bridge-we
 - 可剥离只有一个公共目录的压缩包外层；
 - 为源文件和输出记录大小与 SHA-256。
 
-输入中的 Java、class、JAR 内代码、JavaScript、Gradle/Maven 构建均不会执行。Java 源文本只会交给 JavaParser 建立 AST，随后由项目内置的确定性规则求值；它不使用输入 classpath，也不解析或调用任意 helper 实现。可选服务器验证只执行项目内置固定 harness 和用户显式提供、应当可信的 Server JAR。
+在此静态入口中，输入的 Java、class、JAR 内代码、JavaScript、Gradle/Maven 构建均不会执行。Java 源文本只会交给 JavaParser 建立 AST，随后由项目内置的确定性规则求值；它不使用输入 classpath，也不解析或调用任意 helper 实现。可选服务器验证只执行项目内置固定 harness 和用户显式提供、应当可信的 Server JAR。
 
 ## 输入类型识别
 
@@ -155,7 +214,7 @@ Mod namespace 来自 metadata `name`，按 Mindustry `LoadedMod.name` 规则转�
 
 `bridge-java-static` 通过 `StaticSourceExporter` SPI 接入 MOD 路径。它使用 JavaParser 仅解析源文本，建立 Content 声明、常量和引用符号表，再把可证明的原版数据对象图渲染成 HJSON。生成文件保持源 Mod 命名语义，随后交给共享 `ModNamespaceRewriter` 转换为 `dp-*`。
 
-当前主干可处理：
+静态 `convert` 当前可处理：
 
 - Item、Liquid/CellLiquid、StatusEffect、UnitType、Block 根声明；
 - Weapon、Bullet、Ability、Effect、Draw/Part/Shoot、Consume 和常见计划/stack/map/list 对象；
@@ -323,9 +382,10 @@ Mindustry 的 ContentAsset/generated 资源可能使用内容文本的精确哈�
 
 二进制资产在没有路径重写时保持字节不变。普通 Mod 文本会规范化；已有 DP content/patch 文本按前述策略保持原字节。
 
-## Web 任务编排
+## 历史本地 Web 任务编排（停止主线维护）
 
-`bridge-web` 是转换核心之外的薄适配层：
+`bridge-web` 是早期实现的本地静态 `convert` 薄适配层，以下仅保留为历史架构记录。
+它已退出当前主线，不承载、不调用会执行 Mod JAR 的 `runtime-convert`：
 
 ```text
 Browser
@@ -347,15 +407,22 @@ bridge-web HTTP server
               +-- report.json/report.md/logs/DP ZIP
 ```
 
-设计上不允许 Web 端直接调用输入 Mod，也不允许浏览器参数拼接任意 shell 命令。上传文件只会保存到 UUID 隔离目录；CLI 参数以进程参数列表传递，转换器随后再次执行 ZIP Slip、条目数、展开大小、压缩比和路径检查。
+该历史实现不允许 Web 端执行输入 Mod，也不允许浏览器参数拼接任意 shell 命令。
+上传文件仅保存到 UUID 隔离目录；CLI 参数以进程参数列表传递，静态转换器随后再次
+执行 ZIP Slip、条目数、展开大小、压缩比和路径检查。
 
-作业状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled`。并发上限默认是 1，其余任务排队。运行中取消会终止对应 CLI 进程及其后代，避免只结束包装进程而遗留验证 JVM；已写入日志不是事务的一部分，会保留下来供审计。
+历史作业状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled`。并发上限默认是 1，
+其余任务排队。运行中取消会终止对应静态 CLI 进程及其后代；已写入日志会保留供审计。
 
-stdout/stderr 合并后同时写入持久文件并推送 SSE。SSE 只负责低延迟显示，不是日志真相：客户端重连后先读取作业快照，最终以下载的日志归档和 CLI 生成报告为准。报告摘要由 `report.json` 投影生成，不能根据终端文本猜测 Content 成功率。SSE 连接数默认为 32，并在配置解析时硬限制为最多 120，以保留用于上传、状态和下载的 HTTP worker。
+历史实现将 stdout/stderr 合并写入持久文件并推送 SSE。SSE 只负责低延迟显示，
+最终仍以下载的日志归档和 CLI `report.json` 为准，不根据终端文本猜测 Content 成功率。
 
-Web 服务默认绑定 `127.0.0.1:8080`。每个请求的 HTTP `Host` 都必须命中白名单：默认含 `localhost`、`127.0.0.1`、`::1`，具体非通配监听地址会自动加入；监听 `0.0.0.0` / `::` 时则必须用 `MOD_DP_BRIDGE_ALLOWED_HOSTS` 显式列出对外域名/IP。未命中时返回 `421 host_not_allowed`，以降低 DNS rebinding 风险；白名单不是身份认证。
+历史本地服务默认绑定 `127.0.0.1:8080`，并使用 HTTP `Host` 白名单降低 DNS rebinding
+风险。这些措施不是身份认证，也不构成将服务暴露到公网的安全保证。
 
-当前不提供认证、授权、租户隔离或分布式调度；切换到非回环监听不等于安全部署。远程部署必须由反向代理提供 TLS、身份验证、请求限制和 SSE 代理配置，保留浏览器原始 `Host`，并同步配置允许的域名/IP。完整 API、环境变量和部署边界见 `WEB_UI.md`。
+该历史实现没有认证、授权、租户隔离或分布式调度。项目已停止 Web 主线和公网部署目标；
+`WEB_UI.md` 只作为历史本地静态 UI/API 记录，不是对外部署指南，也不得用于包装
+`runtime-convert` 或远程执行用户 Mod。
 
 ## 报告模型
 
@@ -395,7 +462,8 @@ HJSON 可读性、命名空间、资源引用、名称碰撞、图标惯例。
 5. 检查直接与 `finishParsing/init/postInit` 延迟错误；
 6. 输出逐 Content/Patch 诊断和完整日志，然后删除临时目录。
 
-输入 Mod 的 Java/class/Gradle/脚本不会被编译、加载或执行。
+该 apply 验证器本身不编译、加载或执行输入 Mod 的 Java/class/Gradle/脚本。这只描述验证器；
+`runtime-convert` 在更早的 extractor 阶段会按显式 `--allow-mod-execution` 执行可信发布 JAR。
 
 apply 通过可以把 RUNTIME 标为 PASSED，但仍不加载地图，所以 SERVER_LOAD 保持 NOT_RUN。
 
@@ -421,7 +489,7 @@ DataPatcher apply，不更新 RUNTIME/SERVER_LOAD 为 PASSED。
 
 现有 CLI 不会把用户口头/截图测试自动写回原 `report.json`，因此这些转换报告中的 MAP_IMPORT 仍可能是 `NOT_RUN`。人工证据以持久文档和未来测试附件记录，不能篡改成自动验证结果。
 
-## Saturation Firepower 当前端到端证据
+## Saturation Firepower 历史静态 `convert` 端到端证据
 
 2026-07-30 的最终 headless 样本位于 `work/saturation-static-20260730-060256`：
 
@@ -442,13 +510,16 @@ DataPatcher apply，不更新 RUNTIME/SERVER_LOAD 为 PASSED。
 - 结构或 DataPatcher apply 验证失败：最终报告为 `REJECTED`，CLI 返回非零。
 - 仅 Headless 通过不得升级为 SUCCESS。
 - SUCCESS 只能保留给全部硬验证完成且没有未接受错误的未来流程。
-- Web 作业的 `succeeded` 只表示 CLI 正常结束并生成结果，不覆盖报告中的 `PARTIAL`/`REJECTED` 等转换语义。
+- 历史 Web 作业的 `succeeded` 只表示静态 CLI 正常结束并生成结果，不覆盖报告中的
+  `PARTIAL`/`REJECTED` 等转换语义。
 - HTTP 2xx、健康检查和 SSE 正常连接均不是 DP 可加载性的证据。
 
 ## 后续扩展点
 
 - 增加字段级 namespace/asset 规则，而不是引入全局字符串替换。
 - Desktop Worker：真实导入地图、生成/验证 atlas 和 generated 资源。
-- 扩充确定性 JavaParser AST 映射、目标版本 snapshot 和诊断，不把执行输入 Java 或引入 Agent 作为主干兼容方案。
+- 扩展纯运行时 Unit/Block 的有界对象图 mapper，并继续收紧 runtime-guided AST 候选诊断；
+  不使用 javaagent，也不执行源码仓库的 Gradle/Maven/脚本。
 - 多目标版本适配器：需要独立的目标源码、ClassMap 和运行时验证，不能把 v159.7 规则直接宣称兼容 146–158。
-- Web 部署增强：可选认证/授权、持久任务索引、对象存储、跨实例队列和可观测性；这些不能侵入或复制转换核心。
+- 保持 `bridge-web` 为停止主线维护的历史静态实现；不将 `runtime-convert` 的任意 Mod
+  执行能力接入 Web、远程上传或公网服务。

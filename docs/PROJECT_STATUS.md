@@ -4,256 +4,218 @@
 
 ## 当前结论
 
-项目已实现可运行的 CLI 和本地 Web UI，并完成高价值 Java Mod 样本 Saturation Firepower 的确定性 Java AST 静态转换。转换器不编译、不加载、不反射、不执行输入 Mod 代码，而是把可由 Mindustry v159.7/B480 Data Assets 表达的对象图导出为 HJSON，并对不能等价表达的行为逐项降级和报告。Web 层只负责任务编排和可视化，不复制转换逻辑。
+项目主线已经从“网页上传 + 纯静态 Java AST”转为**可信本地运行时转换 CLI**：
 
-## B480 Desktop 导入已通过；描边/组合图修复候选待复测，退出崩溃属于客户端上游
+```text
+可信发布 JAR
+  -> 官方 Mindustry v159.7 独立 JVM 真实加载
+  -> Vars.content 三阶段快照
+  -> Item / Liquid / StatusEffect 动态映射
+  -> 可选源码 AST Block / Unit 候选
+  -> 官方 DataPatcher 单调筛选
+  -> 发布 JAR 资产
+  -> 正式打包
+  -> 官方 DataPatcher.apply 最终复验
+```
 
-真实客户端测试已否决此前的 Saturation ZIP。旧包触发了 B480 固定 `700x700` environment atlas 多页静默丢失；随后还出现上游 `DataImagePacker.unload` 的 `key cannot be null`，并可能污染同一客户端会话，使后续导入产生级联错误。
+该链路已在 New Horizon 2.2.1 的发布 JAR + 对应源码 ZIP 上完整自动跑通，最终复现此前手工实验的 **143 个 Content、0 failed、0 warning** 基线。当前可以认为“根据 Mindustry 真实加载结果反推并生成 DP”已经从可行性实验进入可用原型阶段。
 
-当前修复主线包括：173 张 environment sprite 单页规划、地形 HJSON `variants` 同步降级、OreBlock 运行时别名，以及按 Content hash 生成 sentinel 以绕开首次导入的 `createIcons -> reloadImages -> unload` 路径。详细记录见：`docs/B480_CLIENT_IMPORT_FIX_20260730.md`。
+准确边界仍是：DataPatcher 可加载不等于完整玩法等价；自定义 Java 方法、回调、实体、AI、GUI、网络协议、科技树和 Mod 新地图不迁移。
 
-上一候选 ZIP `saturation-clientfix-20260730-070717` 已由用户确认能在真实 Desktop 正确导入并进入地图。针对用户随后反馈的建造栏组合图、少数镜像构件和单位/炮塔缺描边问题，转换器已完成确定性离线生成与命名规范化。
+## New Horizon 最终自动 E2E
 
-当前最终候选 ZIP：`work\saturation-outlinefix-final-20260730-075936\sfire-mod-dp-v159.7.zip`；SHA-256：`EEEA579FA05CA961A7B9297DF908419369BA0480E3877F4FACE237DA2F4EFBA9`；大小 6,958,884 bytes（约 6.64 MiB）。真实 B480 `DataPatcher.apply`：2634 assets、358 根 Content、689 added content、0 failed、0 warning。
+输入文件名：
 
-本轮新增/修复：87 个炮塔或多层工厂 full icon、326 个 outline/outlined sprite，共 413 张离线生成 PNG；329 个唯一 content-hash sentinel；`*-R/-L.png` 规范为 `*-r/-l.png` 并同步改写显式引用；共享武器 generated atlas 名去重；`cimai` 的 full/preview/主体与所有 RegionPart outline 已生成；`liemei-barrel-R.png` 已规范输出为 `liemei-barrel-r.png`。仍有 152 条离线图标缺失或不支持项，均由 `B480_OFFLINE_CONTENT_SPRITES_PARTIAL` 汇总报告。
+```text
+NewHorizonMod.2.2.1.jar
+NewHorizonMod-2.2.1.zip
+```
 
-退出地图与无核心编辑器地图退出崩溃已精确定位为 B480 客户端 `DataImagePacker.unload()` 上游错误：`ObjectSet.remove(null)` 导致 `IllegalArgumentException: key cannot be null`。纯 DP 无法在保留全部资产的前提下修复；正确方案是应用 `docs/patches/DataImagePacker-unload-fix.patch` 修改客户端。项目状态仍为 **PARTIAL**：最终候选尚待 Desktop 复测，退出崩溃不能宣称已由 DP 修复，服务器真实地图加载也仍未验证。
+官方 Server：
 
-以下产物只保留为旧 Headless 自动化基线，**不是可继续测试或交付的客户端候选**：
+```text
+work/mindustry-v159.7-server-release.jar
+SHA-256: E41289C32BCF765EB50FA131E6B515D741E20F7843FB567D3AA949E7461F22AB
+```
 
-`work\saturation-static-20260730-060256`
+最终本地回归输出目录（`work/` 不入库）：
+
+```text
+work/runtime-convert-new-horizon-final2-20260801/
+```
 
 DP ZIP：
 
-`work\saturation-static-20260730-060256\sfire-mod-dp-v159.7.zip`
+```text
+work/runtime-convert-new-horizon-final2-20260801/NewHorizonMod.2.2.1-dp-v159.7.zip
+```
 
-SHA-256：
+ZIP SHA-256：
 
-`B085C6533CC43367CBC488DB201D0414F3B212DDDF6B5D8C081C6482755569BE`
+```text
+86721D815437D7039CF950E56C409039D79B800C7D2D6EEAC8175E692C7F61FE
+```
 
-该旧产物通过了 v159.7 静态结构检查和真实 B480 `DataManager.load` / `DataPatcher.apply`，但已被 Desktop 导入失败否决。新包现已通过真实 Desktop 导入和进入地图；项目状态仍为 **PARTIAL**，因为退出/无核心场景会崩溃、部分组合图缺失且服务器真实地图加载尚未验证。
-
-集中验证记录见：`docs/SATURATION_FINAL_VALIDATION_20260730.md`。
-
-## 已完成的主干能力
-
-### 输入、安全与输出
-
-- 支持目录、ZIP/JAR、JSON/HJSON/JSON5 文本输入。
-- 识别普通 Mod、旧 CP PatchSet 和已有 v159 DP。
-- 安全扫描目录和压缩包，限制 ZIP Slip、文件数、单文件/总大小、压缩比和路径长度。
-- 不执行输入 Java、JavaScript、Kotlin、Gradle 或 Maven 代码。
-- 输出：
-  - `<name>-dp-v159.7.zip`
-  - `server-assets/`
-  - `report.json`
-  - `report.md`
-  - `logs/conversion.log`
-  - `logs/data-patch-apply.log`
-  - `logs/server-asset-discovery.log`
-- ZIP 使用稳定条目顺序和时间戳；最终 Saturation 产物已复打包验证 SHA-256 一致。
-
-### Web UI 与 HTTP API
-
-- `bridge-web` 提供原生 HTML/CSS/JavaScript 的 Mindustry 简约风格界面，无 Node.js 构建步骤。
-- 支持拖拽/选择 `.zip`、`.jar`、`.hjson`、`.json`、`.json5`，目录需先压缩。
-- 支持创建/排队/终止任务、SSE 实时终端日志、阶段进度、结果 ZIP/全部日志下载，以及默认折叠的完成/缺失项报告。
-- 每个任务使用 UUID 隔离目录和独立 CLI JVM；stdout/stderr 合并落盘，任务并发、排队、上传大小、展开大小、条目数、SSE 连接和保留时长均可配置；SSE 连接数默认 32，硬上限 120。
-- API 包含健康检查、任务列表/快照、上传、取消、SSE、原始报告及 canonical 下载端点；详见 `docs/WEB_UI.md`。
-- 默认仅监听 `127.0.0.1:8080`，并有上传流式硬上限、文件名净化、HTTP `Host` 白名单/DNS rebinding 防护、Origin/Host 同源检查、CSP 和进程树终止。默认允许 `localhost` / `127.0.0.1` / `::1`，非通配监听地址自动加入；绑定 `0.0.0.0` / `::` 远程访问必须用 `MOD_DP_BRIDGE_ALLOWED_HOSTS` 显式列出域名/IP。该白名单不替代认证；当前没有内置认证、授权、租户隔离、分布式队列或对象存储，不能直接裸露到公网。
-
-### 声明式 Mod、已有 DP 与 Legacy CP
-
-- 转换 Item、Block、Liquid、Status、Unit、Weather 根 Content，以及可由 v159.7 `ClassMap` 表达的嵌套对象。
-- 递归移除 `research` 并报告。
-- `ModNamespaceRewriter` 通过符号表迁移内容、patch、bundle、sprite、sound、music 和部分 generated 引用到 `dp-`。
-- 已有 DP 的 content/patch 文本保持原始字节，避免破坏 generated content hash。
-- Legacy CP 输出为 `patches/<slug>.hjson`，并对部分旧社区语法提供有警告的兼容修复。
-- maps、Planet/Sector、科技树、脚本、GUI/网络和 `sprites-override` 按范围明确排除。
-
-### Java AST 静态导出
-
-`bridge-java-static` 已进入主干，不再是“尚未实现”的规划项。当前能力包括：
-
-- JavaParser AST 扫描和内容声明符号表；
-- 字面量、常量、算术/布尔表达式、颜色、枚举和内容引用；
-- 匿名初始化器、方法局部常量和已知链式赋值；
-- requirements、ItemStack/LiquidStack、Consume、ammo、plans、upgrades；
-- Unit entity/controller/defaultCommand；
-- Weapon、Bullet、Ability、Effect、Draw、Part、Shoot 的大量 v159.7 构造器和字段；
-- `Weapon.copy/copyRotate/copyRotRel`；
-- 数组、Seq、Map、二维 upgrade 数组；
-- 受限且确定性的 `for`/嵌套循环静态展开；
-- 对已生成 Content 的跨语句字段赋值；
-- 内嵌 `MissileUnitType` 提升为独立 Unit HJSON；
-- 自定义 Block/Bullet 到内置父类的显式降级；
-- 自定义或 lambda Effect 到 `Fx.none` 的明确近似；
-- v159.7 不接受字段的转换期移除和诊断；
-- 固定目标原版对象快照：当前用于恢复 `Blocks.tsunami` 的 slag ammo Bullet，不加载游戏运行时。
-
-当前明确支持的高级静态语义：
-
-- 4 个内嵌导弹单位已提升：`knocker-missile`、`blade-missile`、`sundown-missile`、`defense-platform-nuke-missile`；
-- 7 个确定性循环已展开；
-- 5 个跨 Content 赋值已应用；
-- 加载期随机表达式采用确定性中点近似并报告；
-- `SFBlocks.tieliu` 的 tsunami-slag `fragBullet` 已由绑定 v159.7 的固定快照恢复；
-- 当前 `JAVA_FIELD_EXPRESSION_OMITTED = 0`。
-
-### 资源与引用
-
-- 复制 PNG、音频资产和 bundle；不重新编码或按容器改扩展名。
-- `AssetReferenceValidator` 检查已知 region/sprite/icon/sound/music 字段。
-- 相同 basename PNG 字节相同则确定性去重，不同则拒绝碰撞。
-- sound/music 共享运行时 namespace，冲突会拒绝。
-- Headless 只验证路径、hash、注册和引用解析，不能验证客户端解码、atlas 或播放。
-
-### 正式 v159.7 验证
-
-- `Mindustry1597StructuralValidator` 检查目录、扩展、根类型、basename 冲突和 generated 规则。
-- `Mindustry1597ContentApplyValidator` 在隔离 JVM 中运行项目内置固定 harness，真实调用可信 B480 JAR 的 `Vars.state.data.load(...)` / `DataPatcher.apply(...)`。
-- harness 不编译或执行输入 Mod 代码。
-- 普通 Server 冷启动只用于资产文件发现，不能作为 apply 成功证据。
-- 未加载携带 DP 的地图/存档时，`SERVER_LOAD` 必须保持 `NOT_RUN`。
-
-## 当前自动化结果
-
-### 测试
-
-当前测试汇总：59 项全部通过，0 failed，0 skipped。
-
-| 模块 | 测试数 |
-|---|---:|
-| `bridge-model` | 5 |
-| `bridge-target-api` | 1 |
-| `bridge-target-1597` | 7 |
-| `bridge-converter` | 18 |
-| `bridge-java-static` | 22 |
-| `bridge-web` | 6 |
-| **合计** | **59** |
-
-### Saturation Firepower 最终转换
+### 自动流水线结果
 
 | 指标 | 结果 |
 |---|---:|
-| 扫描源文件 | 1764 |
-| 根 Content | 358 |
-| 外部资产 | 2276 |
-| Data Assets 总数 | 2634 |
-| converted Content | 295 |
-| degraded Content | 63 |
-| excluded / unsupported / failed Content | 0 / 0 / 0 |
-| 报告 info / warning / error | 139 / 64 / 0 |
-| 离线生成 full icon / outline | 87 / 326 |
-| 离线生成图合计 | 413 |
-| 明确报告的离线生成缺失项 | 152 |
+| 官方运行时实际注册 Content | 382 |
+| 三阶段 Content 数 | 382 / 382 / 382 |
+| JAR class 与源码关联 | 1572 / 1572 |
+| JAR 资产与源码关联 | 1602 / 1602 |
+| 动态生成 Item/Liquid/Status | 56 |
+| Hybrid Block/Unit 候选 | 141 |
+| Hybrid 接受 | 87 |
+| 接受 Block / Unit | 85 / 2 |
+| Hybrid 拒绝 / unresolved | 54 / 0 |
+| 最终根 Content 文件 | 143 |
+| 最终外部资产 | 1635 |
+| DataPatcher added content | 145 |
+| DataPatcher failed / warning | 0 / 0 |
+| 最终报告 error | 0 |
 
-按 Content 类型：
+最终 Content 结果：
 
-| 类型 | converted | degraded | 合计 |
-|---|---:|---:|---:|
-| Item | 15 | 0 | 15 |
-| Liquid | 6 | 0 | 6 |
-| Status | 10 | 12 | 22 |
-| Unit | 49 | 14 | 63 |
-| Block | 215 | 37 | 252 |
-| **合计** | **295** | **63** | **358** |
+| 状态 | 数量 |
+|---|---:|
+| converted | 29 |
+| degraded | 114 |
+| unsupported | 239 |
+| failed | 0 |
 
-64 个 warning 是转换报告中的明确降级/资产审查警告，其中 5 个为逐文件 `AUDIO_CONTAINER_EXTENSION_MISMATCH`，另含 152 条离线图标缺失/不支持项目的汇总诊断；它们不是 B480 parser/apply warning。正式 apply 结果为：
+按类型的主要结果：
 
-```text
-assets=2634
-content=358
-external=2276
-addedContent=689
-failed=0
-warnings=0
-```
+- Item：18 converted；
+- Liquid：10 converted + 7 degraded；
+- Status：1 converted + 20 degraded；
+- Block：85 degraded + 196 unsupported；
+- Unit：2 degraded + 38 unsupported；
+- 其余 Weather/未知根类型保持 unsupported。
 
-验证阶段：
+所有 Hybrid 接受项均保持 `degraded`。它们通过了官方 parser/apply，但其 Java-only 行为没有被宣称为已迁移。
+
+### 验证状态
 
 - `STRUCTURE = PASSED`
 - `RUNTIME = PASSED`
 - `MAP_IMPORT = NOT_RUN`
 - `SERVER_LOAD = NOT_RUN`
 
-文件级规划结果：
+下一项外部验证应由真实 v159.7/B480 Desktop 导入上述 ZIP，并测试地图保存重开、单位、炮塔、工厂、贴图、音效和退出流程；之后再用服务器加载携带 DP 的真实地图/存档。
 
-- copied：1416
-- converted：115
-- excluded：129
-- unsupported：104
-- failed：0
+## 已完成的主线能力
 
-文件级 unsupported 主要是工程文件、旧备份/非 Data Assets 目录和不支持扩展；它与 358 个目标 Content 的 `unsupported = 0` 是不同统计维度。
+### 运行时提取
 
-## 已完成的真实 Desktop 代表测试
+- 新命令：`runtime-convert`；
+- 必须显式 `--allow-mod-execution`；
+- 只接受固定 SHA-256 的官方 v159.7/B480 Server JAR；
+- 在独立 JVM、隔离工作目录中加载发布 Mod JAR；
+- 在 `PRE_CONTENT_INIT`、`POST_CONTENT_INIT`、`FINAL_AFTER_MOD_INIT` 捕获三阶段快照；
+- 支持 `PRE ⊆ POST ⊆ FINAL` 的合法晚注册 Content；
+- 映射时使用每个 Content 最早可用的权威阶段；
+- 不调用 Mod 可覆写的 `Content.getContentType()` 或任意对象 `toString()`；
+- 修复 Arc `Seq.items` 实际 `Object[]` 导致的泛型数组强转崩溃；
+- worker 默认最大 heap 1024 MiB，并有超时、单记录、字段、容器、根快照和总快照字节预算。
 
-### minimal 普通数据 Mod
+### 动态映射
 
-- Desktop 导入 9 个资源。
-- `dp-fixture-wall`、`dp-fixture-drone`、`dp-fixture-alloy` 正确注册。
-- 4 个额外星球标签和原版 `heat-source` 已确认是 `shownPlanets` 缺省导致的原版数据库展示副作用，不是转换包注册 Planet。
-- 尚未完成地图保存重开、武器、音效和服务器地图联测。
+- 版本绑定模块：`bridge-runtime-mapper`；
+- 当前直接生成 Item、Liquid/CellLiquid、StatusEffect；
+- 捕获 Unit/Block 根 parser 字段，作为后续纯运行时 mapper 数据基础；
+- 对未支持 Content 逐项保留 fallback、来源位置和诊断；
+- 0 个动态 I/L/S 的 Block/Unit-only Mod 仍可进入 Hybrid；若最终仍没有任何内容声明，则在打包前明确失败，不生成空 DP。
 
-### `惊鸿3.zip`
+### 资产
 
-- Desktop 导入 17 个资源。
-- 惊鸿炮塔注册成功，用户确认所测核心逻辑正常。
-- 输入/输出 17 个条目路径和字节保持一致。
-- 两个音效、全部 generated/region 和地图持久化未逐项验证。
+- `bridge-runtime-assets` 从发布 JAR 选择 bundle、sprite、generated、sound、music 等资产；
+- 发布 JAR 是资产唯一权威，源码资产不会覆盖它；
+- 保留精确来源、冲突、碰撞、排除和未支持结果；
+- 正式打包仍会执行已有命名空间重写、引用检查、B480 环境贴图规划、full icon 和 outline 生成规则。
 
-上述两个较小样本不能单独外推为 Saturation 已通过 Desktop；不过 Saturation 上一候选包随后已由用户确认能够正确导入并进入地图。当前描边/组合图最终候选仍需单独复测。
+### Runtime-guided 源码 Hybrid
 
-## 当前降级边界
+- 源码目录/ZIP只读取 Java 文本并解析 AST，不运行 Gradle/Maven/源码代码；
+- 只补运行时真实注册且动态 mapper 为 unsupported 的 Block/Unit；
+- 约束名称、Content kind、三阶段 parser fallback；
+- 要求源码路径与 release JAR class 精确关联，候选声明行必须命中 class `LineNumberTable`；
+- source outcome FAILED、Java parse ERROR 或来源不完整时 fail-closed；
+- 有源码文件数、单文件、展开总量、候选数、生成文件和生成总字节预算；
+- 被接受的 Java class 文件结果仍保持 unsupported/excluded，不会因数据声明被补充而伪装成 Java 行为已迁移。
 
-Saturation 的 63 个 degraded Content 已生成并被 B480 接受，但仍含明确损失：
+### DataPatcher 单调筛选
 
-- 自定义 Block 类降级为内置父类，Java-only 建造/伤害/功率/强化逻辑丢失；
-- 自定义 Bullet 降级为 `BasicBulletType`，体积增伤、破盾、穿透增伤等自定义行为丢失；
-- Java 方法覆写和状态 `TransitionHandler` 无法安装；
-- 自定义 Effect factory 和 lambda 绘制 Effect 只能替换为 `Fx.none` 或保留其余数据；
-- v159.7 DataPatcher 不接受的字段被移除；
-- 一处加载期随机值已替换为固定中点 5，因此分布语义不等价；
-- 4 个 Content 缺少常规图标候选；另有 152 条离线 full/outline 合成缺失或不支持项，均已在报告中明确列出，必须由 Desktop 实际观察。
+1. 先验证 runtime-only base，必须 0 failed / 0 warning；
+2. 验证全部候选；
+3. 只按精确 content 路径剔除归属明确的 failure/warning；
+4. 重验剩余集合，识别依赖闭包；
+5. 无法安全归属、协议错误或超出轮次时回退 runtime base；
+6. 正式打包后再执行一次完整官方 DataPatcher.apply；
+7. 最终必须 `failedAssets=0` 且 `warningCount=0`。
 
-这些不是程序失败，而是 DP 运行时表达能力或当前静态映射的可审计降级。报告必须与产物一起交付。
+候选剔除属于可选项筛选，记为 warning 和明确未转换结果，不再把已经剔除的候选污染为最终产物 error。
 
-## 尚未完成与主要风险
+## 安全模型
 
-1. **当前最终候选尚未 Desktop 复测**：上一候选已成功导入并进入地图，但不能把该结论自动外推到本轮新增的 413 张离线生成贴图。
-2. **客户端资产盲区**：不能声称全部 2264 个 PNG ZIP 条目、10 个音频资产的 atlas region、generated 或触发播放均已通过。10 个音频文件名均以 `.ogg` 结尾，但文件头审计为 5 个 OGG、3 个 MP3 容器、2 个 WAV 容器；5 个不匹配项已报告 `AUDIO_CONTAINER_EXTENSION_MISMATCH`，当前保持原名和原始字节，不自动转码。
-3. **地图持久化未测试**：保存、完全退出、重开后的 DP 内嵌恢复未验证。
-4. **玩法未测试**：关键单位、炮塔、工厂、弹丸、Consume、AI、状态、Effect 的实际行为未验证。
-5. **服务器地图加载未测试**：当前只完成 DataPatcher apply 和普通文件发现，没有加载携带 DP 的真实地图/存档。
-6. **自定义 Java 行为不可等价表达**：Agent 也不能扩大 v159.7 DP 的运行时能力。
-7. **固定目标快照有版本绑定**：`tsunami + slag` 快照只对当前 v159.7/B480 目标负责，升级版本必须重新核对源码。
-8. **146–158 无独立运行器**：旧 Mod 只做尽力静态迁移。
-9. **仅编译 JAR 的 Java 逻辑未反编译**：Java AST exporter 要求 `.java` 源码。只含 `.class` 的发布 JAR 可迁移资产/声明式内容，但其字节码玩法逻辑会明确报 error；当前高价值 Saturation 验证使用的是完整源码目录。
-10. **Web UI 仍是本地单实例工具**：已实现上传、队列、终止、实时日志、下载、报告和 Host 白名单/DNS rebinding 防护，但 Host 白名单不是认证。当前没有账号/权限、跨实例持久队列、对象存储、病毒扫描或公网部署默认值；远程部署必须补 TLS、认证、授权、限流和资源隔离，并显式配置允许的域名/IP。
+动态模式会执行 Mod，**独立 JVM 不是安全沙箱**。Mod 仍拥有当前用户可用的文件、网络和系统权限。因此：
 
-## 当前硬成功标准
+- 只处理可信发布 JAR；
+- 建议在低权限账户、虚拟机或容器中运行；
+- 运行前后校验 Mod JAR 和 Server JAR SHA-256；
+- 动态能力不接入网站或远程上传服务；
+- Web UI 已退出主线，`bridge-web` 仅保留历史静态模式实现。
 
-某一转换产物只有同时满足下列条件，才可称为最终可用：
+## 自动化测试
 
-1. 转换报告无未处理 error/failed；
-2. degraded/excluded/unsupported 均已审查并被接受；
-3. v159.7 结构验证和真实 B480 DataPatcher apply 通过；
-4. v159.7 Desktop 导入 DP ZIP 成功；
-5. 地图保存、完全退出客户端、重开后内容仍存在；
-6. 代表性物品、液体、地形、炮塔、工厂、单位、武器、状态、贴图、特效和音效通过人工测试；
-7. 匹配 B480 服务器加载用户导出的目标地图/存档并完成短时联机测试。
+运行时主线重点测试集当前为 **102/102 通过**；全仓 `test --rerun-tasks` 为 **124/124 通过**：
 
-当前最终候选已完成第 1–3 项；第 4 项只有上一候选取得实证，本轮包仍待复测，第 5–7 项也未完成，因此状态必须保持 `PARTIAL`。
+| 模块 | 测试数 |
+|---|---:|
+| bridge-runtime-extractor | 12 |
+| bridge-runtime-mapper | 4 |
+| bridge-java-static | 32 |
+| bridge-runtime-assets | 9 |
+| bridge-converter | 20 |
+| bridge-cli | 25 |
+| **合计** | **102** |
+
+覆盖内容包括：晚注册、三阶段删除拒绝、快照预算、Seq Object[]、精确行号来源、partial AST fail-closed、源码/生成预算、空动态 baseline、单调候选剔除、依赖闭包、runtime base 回退、最终严格 apply 等。
+
+全仓额外包含 `bridge-model` 5、`bridge-source-index` 3、`bridge-target-api` 1、`bridge-target-1597` 7 和历史 `bridge-web` 6 项测试。
+
+## 静态转换历史能力
+
+`convert` 命令仍保留并支持：
+
+- JSON/HJSON/JSON5 声明式 Mod；
+- 带源码 Java Mod 的确定性 AST 静态导出；
+- 旧 CP/PatchSet；
+- 已有 v159 DP 重打包；
+- Saturation Firepower 的 358 根 Content 静态转换、离线 full icon/outline 和真实 Desktop 导入历史验证。
+
+Saturation 的客户端退出/无核心地图退出崩溃已定位为 B480 `DataImagePacker.unload()` 上游问题，详见：
+
+- `docs/B480_CLIENT_IMPORT_FIX_20260730.md`
+- `docs/B480_EXIT_UNLOAD_CRASH_20260730.md`
+- `docs/patches/DataImagePacker-unload-fix.patch`
+
+这些静态历史证据仍有价值，但不再代表项目当前主架构。
+
+## 当前硬边界
+
+1. 仅支持官方 Mindustry v159.7/B480 输出和验证。
+2. 原 Mod 必须能在官方 v159.7 上加载；旧 API、缺失依赖或非官方运行时专用 Mod 会在 extractor 阶段失败。
+3. JAR-only 情况下，当前直接动态根映射仍主要是 Item/Liquid/Status；Block/Unit 高覆盖依赖匹配源码。
+4. 混淆、无 `LineNumberTable`、源码与发布 JAR 不一致会降低或阻断 Hybrid。
+5. 方法覆写、事件回调、自定义实体/AI/Effect、GUI、网络协议、科技树和新地图不迁移。
+6. DataPatcher 通过不能证明真实玩法、渲染、音频、保存重开或服务器地图联机通过。
 
 ## 下一步
 
-1. 将最终 ZIP 和报告交给用户用 v159.7/B480 Desktop 导入。
-2. 在编辑器中放置代表性地形、运输、电力、炮塔、工厂和单位，实际生产与开火。
-3. 检查报告中的 63 个 degraded Content、4 个常规 Content 图标警告及 152 条离线合成缺失项，重点验证高级炮塔与单位。
-4. 检查所有关键贴图、Effect、DrawPart 和 10 个音频资产；特别验证 3 个 MP3 容器和 2 个 WAV 容器使用 `.ogg` 扩展名时，目标 Desktop 是否仍能正确解码和播放。
-5. 保存地图、完全退出、重启并重新打开。
-6. 导出测试地图，由匹配 B480 服务器实际加载；保留客户端/服务器日志、地图和截图/视频。
-7. 根据真实测试结果继续补转换规则或处理版本快照；Web UI 的使用/API/安全边界以 `docs/WEB_UI.md` 为准。
-8. 如决定远程部署，再单独设计认证授权、持久任务索引、对象存储、配额和隔离，不把这些功能侵入转换核心。
+1. 把 New Horizon 最终 ZIP 交给真实 v159.7/B480 Desktop 测试。
+2. 检查 85 个 Block 与 2 个 Unit 的建造栏、贴图、炮塔/工厂/单位功能和音效。
+3. 保存地图、完全退出客户端并重开；保留日志。
+4. 用匹配 B480 服务器加载该地图/存档。
+5. 根据实际失败继续扩展动态 Unit/Block 对象图 mapper，减少对源码 AST 的依赖。
+6. 保持 Web 停止主线，不把任意 Mod 执行能力包装为公网服务。

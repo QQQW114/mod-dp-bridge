@@ -1,112 +1,141 @@
 # mod-dp-bridge
 
-将 Mindustry Mod、旧式 CP 和已有 Data Pack **尽力静态迁移**为 Mindustry **v159.7 / B480 Data Assets（DP）**。
+将 Mindustry Mod、旧式 CP 和已有 Data Pack **尽力迁移**为 Mindustry **v159.7 / B480 Data Assets（DP）**。
+
+当前主线面向本地 CLI：对可信的已编译 Java Mod，使用官方 Mindustry v159.7 独立 JVM 真实加载 Mod，读取实际注册的 Content，再结合可选源码 AST 候选和官方 `DataPatcher.apply` 筛选，生成可审计的 DP。
 
 > [!IMPORTANT]
-> 本项目目前是实验性转换工具，提供 CLI 和本地 Web UI，目标版本固定为 **v159.7 / B480**。转换成功表示生成了可审计、可继续测试的 DP 候选，**不表示原 Mod 的全部 Java 行为已被等价还原**。使用前请阅读生成的 `report.md`，正式部署前请在真实客户端和服务器地图中验证。
-
-项目坚持三个原则：
-
-1. **尽力转换地图玩法内容**：物品、流体、状态、单位、方块、炮塔、工厂、武器、弹药、特效以及相关贴图和音频；
-2. **不执行输入 Mod**：不编译、不加载、不反射、不运行输入中的 Java、JavaScript、Kotlin、Gradle 或 Maven 代码；
-3. **不静默丢弃**：所有转换、降级、排除、不支持和失败项都写入日志及 JSON/Markdown 报告。
+> 本项目是实验性转换工具。转换成功只表示产物通过了当前自动检查，不表示 Java Mod 的全部行为已经无损还原。正式使用前必须审阅 `report.md`、`runtime-mapping.json`、`hybrid-report.json` 和日志，并在真实客户端地图及服务器中测试。
 
 本项目不属于 Mindustry 官方项目，也不保证任意 Mod 都能无损转换。
 
-## 当前能力
+## 当前设计
 
-| 能力 | 当前状态 |
-|---|---|
-| 输入目录、ZIP/JAR、JSON/HJSON/JSON5 | 支持 |
-| 普通声明式 Mod | 支持 |
-| 已有 v159 DP 重打包/检查 | 支持，并尽量保持 content/patch 原始文本字节 |
-| 旧式 CP/PatchSet | 支持原生 HJSON；部分社区旧语法会尝试兼容修复并警告 |
-| Java Mod | 支持**带 `.java` 源码**的确定性 AST 静态导出 |
-| Item、Liquid、Status、Unit、Block | 重点支持 |
-| Weapon、Bullet、Ability、Effect、Draw/Part/Shoot、Consume | 在 v159.7 原版 `ClassMap` 可表达范围内尽力转换 |
-| bundle、sprite、sound、music | 复制、改名、引用检查；不自动转码音频 |
-| 单位/炮塔描边、炮塔及多层工厂建造栏组合图 | 确定性离线生成；不能生成的项目会集中报告 |
-| v159.7 结构验证 | 自动执行 |
-| B480 `DataManager.load` / `DataPatcher.apply` | 提供可信 Server JAR 后可选执行 |
-| Web UI / HTTP API | 支持本地上传、排队/终止、实时日志、产物/日志下载和折叠报告；无内置认证，不应直接暴露公网 |
+```text
+可信发布 JAR
+  -> 官方 Mindustry v159.7 独立 JVM 真实加载
+  -> Vars.content 三阶段快照
+  -> Item / Liquid / StatusEffect 动态映射
+  -> 可选源码 AST 生成 Block / Unit 候选
+  -> 官方 DataPatcher 单调筛选候选
+  -> 从发布 JAR 选择贴图、音频、bundle 等资产
+  -> 生成 DP ZIP 与 server-assets
+  -> 再次执行官方 DataPatcher.apply 最终验证
+```
 
-### Java 静态导出
+权威关系：
 
-Java 源码只会被 JavaParser 解析为 AST。转换器对受限、可证明的纯数据表达式求值，并生成 HJSON；不会使用输入 Mod 的 classpath，也不会调用其中的 helper 实现。
+- **发布 JAR**：实际注册 Content、运行时类型及资产的权威来源；
+- **源码目录/ZIP**：只作为非执行的静态候选来源，不运行 Gradle、Maven、Java、Kotlin 或脚本；
+- **官方 v159.7 Server JAR**：负责真实 Mod 加载和最终 DP parser/apply 验证；
+- **报告与日志**：明确记录接受、降级、排除、不支持、失败和筛选剔除项。
 
-当前能够处理的典型结构包括：
+项目不使用 `javaagent`，也不对发布 JAR 做通用反编译。
 
-- 根 Content：`Item`、`Liquid`/`CellLiquid`、`StatusEffect`、`UnitType`、`Block`；
-- 嵌套对象：Weapon、Bullet、Ability、Effect、Draw、Part、Shoot、Consume、常见 AI/计划/Stack/Map/List；
-- 字面量、常量、安全算术和布尔表达式、Color、内容/资产引用；
-- 匿名 initializer、方法局部常量、链式赋值、常见 builder 和 copy helper；
-- requirements、consume、ammo、plans、upgrades；
-- 内嵌 `UnitType`/`MissileUnitType` 提升为独立 unit content；
-- 受限的确定性 `for` 展开：单循环最多 64 次、单 Content 总预算 4096 次、最多 8 层嵌套。
+## 两种转换模式
 
-自定义类字段、方法覆写、lambda/callback、运行时随机逻辑和特殊 Effect 只有在存在明确规则时才会降级为原版可表达形式，否则会被标为 `degraded`、`unsupported` 或错误。
+### 1. `runtime-convert`：编译 Java Mod 主线
 
-> 仅含 `.class` 的发布 JAR 不会被反编译。此类输入仍可迁移其中的声明式 HJSON、贴图和音频，但无法从字节码恢复的可执行 Content 会明确报错，而不会伪装为已转换。
+适用于已经发布的 Java Mod JAR。必须同时提供固定版本的官方 Mindustry v159.7 Server JAR，并显式确认会执行 Mod。
+
+| 输入 | 是否必需 | 用途 |
+|---|---:|---|
+| 已构建 Mod `.jar` | 是 | 真实加载、内容注册和资产权威 |
+| 官方 Mindustry v159.7/B480 Server `.jar` | 是 | 加载 Mod、验证生成 DP；SHA-256 必须匹配项目固定值 |
+| 对应源码目录或源码 `.zip` | 否 | 为运行时确认的 Block/Unit 提供 AST 数据候选 |
+
+当前动态映射重点生成：
+
+- Item；
+- Liquid / CellLiquid；
+- StatusEffect。
+
+提供对应源码时，还会尝试补充：
+
+- Block，包括炮塔、工厂、生产、运输、电力、防御及环境方块；
+- Unit；
+- 上述根 Content 中由 v159.7 Data Assets 可表达的 Weapon、Bullet、Ability、Effect、Draw、Part、Shoot、Consume 等嵌套数据。
+
+源码候选只有在满足运行时注册、名称、kind、parser fallback、JAR class/源码行号来源约束，并通过官方 DataPatcher 零失败、零警告筛选后才会进入最终 DP。被接受的内容仍标为 `degraded`：parser 可加载不代表方法覆写、回调和自定义 Java 行为已迁移。
+
+### 2. `convert`：安全静态模式
+
+适用于：
+
+- JSON/HJSON/JSON5 声明式 Mod；
+- 源码目录或源码 ZIP 的确定性 Java AST 尽力导出；
+- 旧式 CP/PatchSet；
+- 已有 v159 DP 的检查与重打包。
+
+此模式不执行输入 Mod。对于只含 `.class`、没有对应源码的 Java JAR，它不能恢复其中的可执行内容；此类输入应优先使用 `runtime-convert`。
 
 ## 项目边界
 
-### 重点迁移
+### 尽力迁移
 
 - 物品、流体、状态效果；
-- 单位、武器、弹药、Ability 和 AI 的原版可表达字段；
-- 炮塔、工厂、运输、电力、存储、防御、生产、环境和地形方块；
-- Draw、RegionPart、Shoot、Effect 等 DP 可表达对象；
+- 单位、武器、弹药、Ability 和原版可表达 AI 字段；
+- 炮塔、工厂、生产、运输、电力、存储、防御、环境和地形方块；
+- Draw、RegionPart、Shoot、Effect 等可由 v159.7 Data Assets 表达的对象；
 - bundle、普通/generated sprite、音效和音乐；
-- Mod 运行时名称到 `dp-` 命名空间的内容及资产引用迁移；
-- 单位/炮塔 outline、炮塔/多层工厂 full icon 等必要客户端资源。
+- 单位/炮塔描边及炮塔、工厂建造栏组合图；
+- 内容和资产引用到 `dp-` 命名空间的迁移。
 
-### 明确不转换
+### 明确放弃
 
 - 科技树和 `research`；
-- Planet、Sector 与 Mod 自带地图；
+- Planet、Sector 和 Mod 自带新地图；
 - GUI、自定义客户端界面；
-- 网络协议和多人同步代码；
-- JavaScript/Kotlin/Java 的任意运行时代码、反射及原生库；
-- `scripts`、`sprites-override`；
-- 无法由 v159.7 Data Assets 原生模型表达的完全自定义行为。
+- 自定义网络协议；
+- Java/Kotlin/JavaScript 的任意运行时回调、反射、原生库和完全自定义逻辑；
+- 无法由 v159.7 Data Assets 模型表达的自定义实体、绘制和特效行为。
 
-“不转换 Mod 自带地图”不影响使用生成的 DP：你仍可在 v159.7 地图编辑器中把 DP 导入现有或新建地图。
+“不转换 Mod 自带地图”不影响 DP 的使用：可把生成的 DP 导入已有地图或新建地图。
 
-### 版本含义
+### 版本边界
 
-工具会尝试读取面向 Mindustry 146 及以上版本制作的 Mod，但当前只有一个输出适配器：**v159.7 / B480**。它不是 146–158 的历史运行时模拟器，也不会自动修复所有旧 API 差异。输入越接近 v159、越依赖原版 Content 字段，成功率通常越高。
+- 唯一目标：**Mindustry v159.7 / Build 480**；
+- 工具可尝试读取面向 146 及以上版本的输入，但没有 146–158 历史运行时模拟器；
+- 原 Mod 若本身无法在官方 v159.7 加载，`runtime-convert` 也无法绕过其 API/依赖不兼容；
+- 非官方 MindustryX/MDT Server JAR 不作为当前动态主线的验证依据。
+
+## 安全警告
+
+> [!CAUTION]
+> `runtime-convert` 会在独立 JVM 中真正执行所提供的 Mod JAR 和官方 Server JAR。独立进程不是安全沙箱：代码仍拥有当前用户可用的文件、网络和系统权限。只可处理你信任且来源明确的 JAR，建议在专用低权限账户、虚拟机或容器中运行。
+
+安全措施包括：
+
+- 必须显式传入 `--allow-mod-execution`；
+- 官方 Server JAR 必须匹配固定 SHA-256；
+- Mod 加载、DP 筛选和最终验证均在独立 JVM/临时目录中运行；
+- extractor 设置内存、时间、内容记录、字段、容器和总快照字节预算；
+- 输入归档拒绝绝对路径、`..`、ZIP Slip、异常路径、超大条目和过高压缩比；
+- 源码只读取 Java 文本并解析 AST，不运行构建系统；
+- 运行前后校验 Mod JAR 与 Server JAR 指纹，防止处理中被替换。
 
 ## 环境要求
 
-- JDK 21（构建工具链；生成字节码兼容 Java 17）；
+- JDK 21（构建；产物目标 Java 17）；
 - Git；
-- 首次构建时可访问 Maven Central 和 Gradle 分发服务；
-- 可选：可信的 Mindustry v159.7/B480 Server JAR，用于真实 parser/apply 验证。
+- 首次构建时可访问 Gradle 分发和 Maven Central；
+- 官方 Mindustry v159.7/B480 Server JAR。
 
-## 获取与构建
+项目固定的官方 Server JAR SHA-256：
 
-```bash
+```text
+E41289C32BCF765EB50FA131E6B515D741E20F7843FB567D3AA949E7461F22AB
+```
+
+## 构建
+
+```powershell
 git clone https://github.com/QQQW114/mod-dp-bridge.git
 cd mod-dp-bridge
+.\scripts\gradle.ps1 :bridge-cli:installDist --no-daemon
 ```
 
-Windows PowerShell（同时构建 CLI 和 Web UI 分发包）：
-
-```powershell
-.\scripts\gradle.ps1 build :bridge-cli:installDist :bridge-web:installDist
-```
-
-`scripts/gradle.ps1` 会通过 ASCII Junction 运行 Gradle，用于规避 Windows 下工程路径含中文时 Test Worker classpath 参数文件的编码问题。若路径只含 ASCII，也可直接运行：
-
-```powershell
-.\gradlew.bat build :bridge-cli:installDist :bridge-web:installDist
-```
-
-Linux/macOS：
-
-```bash
-./gradlew build :bridge-cli:installDist :bridge-web:installDist
-```
+Windows 中文路径下应优先使用 `scripts/gradle.ps1`。该脚本通过 ASCII Junction 运行 Gradle，避免 Test Worker classpath 参数文件编码问题。
 
 CLI 安装目录：
 
@@ -114,272 +143,200 @@ CLI 安装目录：
 bridge-cli/build/install/bridge-cli/
 ```
 
-Web UI 安装目录：
+## 使用方法
 
-```text
-bridge-web/build/install/mod-dp-bridge-web/
-```
-
-## Web UI 快速使用
-
-Windows：
+### 编译 Java Mod：JAR + 可选源码
 
 ```powershell
-.\bridge-web\build\install\mod-dp-bridge-web\bin\mod-dp-bridge-web.bat
-```
-
-Linux/macOS：
-
-```bash
-./bridge-web/build/install/mod-dp-bridge-web/bin/mod-dp-bridge-web
-```
-
-然后在浏览器打开 [http://127.0.0.1:8080/](http://127.0.0.1:8080/)，拖拽或选择一个 Mod/CP/DP 文件并开始转换。页面提供：
-
-- 开始和终止转换；
-- 转换状态、进度与类似 Windows Terminal 的实时日志；
-- 转换后 DP ZIP 和全部日志归档下载；
-- 完成、降级、排除、不支持、失败项摘要，详细报告默认折叠；
-- 原始 `report.json` 访问。
-
-默认只监听 `127.0.0.1:8080`。所有请求还会校验 HTTP `Host` 白名单：默认允许 `localhost` / `127.0.0.1` / `::1`，具体的非通配监听地址会自动加入。远程访问需用 `MOD_DP_BRIDGE_ALLOWED_HOSTS` 显式列出域名/IP；特别是监听 `0.0.0.0` 或 `::` 时，通配地址不会自动放行任意 `Host`。该 DNS rebinding 防护不是身份认证。当前没有内置账号和权限系统，**不要直接监听公网地址**。完整环境变量、API 和反向代理要求见 [Web UI 与 HTTP API](docs/WEB_UI.md)。
-
-## CLI 快速使用
-
-### 1. 转换
-
-Windows：
-
-```powershell
-.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat convert `
-  "<Mod目录、ZIP/JAR、CP.hjson或已有DP.zip>" `
-  -o ".\out\my-conversion"
-```
-
-Linux/macOS：
-
-```bash
-./bridge-cli/build/install/bridge-cli/bin/bridge-cli convert \
-  "<input>" \
-  -o "./out/my-conversion"
-```
-
-输出目录已存在且允许替换本工具生成的同名产物时，显式加入 `--overwrite`：
-
-```powershell
-.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat convert `
-  ".\MyMod-main" `
-  -o ".\out\my-mod" `
-  --name "my-mod" `
+.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat runtime-convert `
+  --mod-jar "C:\path\to\ExampleMod.jar" `
+  --source "C:\path\to\ExampleMod-source.zip" `
+  --server-jar "C:\path\to\Mindustry-v159.7-server.jar" `
+  --allow-mod-execution `
+  --runtime-timeout 180 `
+  --server-timeout 60 `
+  --hybrid-max-rounds 8 `
+  -o ".\out\example-runtime" `
   --overwrite
 ```
 
-### 2. 可选：使用真实 B480 JAR 验证
+没有源码时删除 `--source`：
+
+```powershell
+.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat runtime-convert `
+  --mod-jar "C:\path\to\ExampleMod.jar" `
+  --server-jar "C:\path\to\Mindustry-v159.7-server.jar" `
+  --allow-mod-execution `
+  -o ".\out\example-runtime"
+```
+
+查看完整帮助：
+
+```powershell
+.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat runtime-convert --help
+```
+
+### 声明式 Mod、CP 或已有 DP
 
 ```powershell
 .\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat convert `
-  ".\MyMod-main" `
-  -o ".\out\my-mod" `
+  "C:\path\to\input.zip" `
+  -o ".\out\static-conversion" `
+  --overwrite
+```
+
+可加入可信 Server JAR执行 parser/apply 验证：
+
+```powershell
+.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat convert `
+  "C:\path\to\input.zip" `
+  -o ".\out\static-conversion" `
   --overwrite `
-  --server-jar "C:\path\to\trusted-v159.7-B480-server.jar" `
+  --server-jar "C:\path\to\Mindustry-v159.7-server.jar" `
   --server-timeout 60
 ```
 
-该选项会在隔离临时目录和独立 JVM 中运行项目内置的固定 harness，真实调用 B480 的 `DataManager.load` / `DataPatcher.apply`。它仍然**不会加载携带该 DP 的地图或存档**。
-
-> [!CAUTION]
-> 输入 Mod 始终只按数据读取；但 `--server-jar` 指定的 JAR 会被 Java 执行。只可使用你信任且来源明确的 Server JAR。
-
-### 3. 审阅报告
-
-至少检查：
-
-- `report.md` 中所有 `degraded`、`unsupported`、`failed`；
-- `diagnostics` 中的 `warning` 和 `error`；
-- 是否存在缺失 sprite/audio、命名冲突、Java 行为降级；
-- `STRUCTURE` 和可选 `RUNTIME` 阶段是否通过。
-
-### 4. 导入与部署
-
-- **客户端**：在精确的 v159.7/B480 Desktop 地图编辑器中，通过 Data Assets/DP 导入功能选择生成的 `*-dp-v159.7.zip`。不要把它当作 Java Mod 安装。导入后保存地图，完全重启客户端，再重开地图验证。
-- **服务器**：`server-assets/` 是 ZIP 的展开形式。备份服务器数据后，将其**内部内容**按原目录结构合并到目标服务器工作目录的 `config/assets/`，再让服务器实际加载携带这些 Data Assets 的地图/存档。
-
-正式验收至少应覆盖：内容注册、建造栏图标、单位/炮塔/工厂行为、贴图与音效、地图保存重开、服务器真实地图加载和客户端连接。
-
-## CLI 选项
-
-查看实时帮助：
-
-```powershell
-.\bridge-cli\build\install\bridge-cli\bin\bridge-cli.bat convert --help
-```
-
-| 选项 | 默认值 | 说明 |
-|---|---:|---|
-| `INPUT` | 必填 | 输入目录、ZIP/JAR、JSON/HJSON/JSON5 文件 |
-| `-o, --output <dir>` | `./out/<input-name>` | 输出目录 |
-| `--name <name>` | 从输入推导 | 覆盖输出 ZIP 的基础名称 |
-| `--overwrite` | `false` | 允许替换已有的同名生成产物 |
-| `--max-input-mib <n>` | `64` | 输入文件/压缩包最大 MiB |
-| `--max-expanded-mib <n>` | `128` | 压缩包展开后最大总 MiB |
-| `--max-entries <n>` | `2048` | 压缩包最大条目数 |
-| `--server-jar <jar>` | 不启用 | 使用可信 v159.7/B480 Server JAR 执行隔离验证 |
-| `--server-timeout <sec>` | `30` | 每个 Mindustry 验证进程超时秒数 |
-| `-h, --help` | — | 显示帮助 |
-| `-V, --version` | — | 显示版本 |
-
-## 输出内容
+## `runtime-convert` 输出
 
 ```text
 <output>/
-├─ <name>-dp-v159.7.zip       # 可由地图编辑器导入的无外层目录 DP ZIP
-├─ server-assets/             # 展开的 HJSON 与资源树，可部署到 config/assets
-├─ report.json                # 机器可读的完整转换事实
-├─ report.md                  # 人工审阅报告
+├─ <mod-name>-dp-v159.7.zip
+├─ server-assets/
+├─ report.json
+├─ report.md
+├─ runtime-pipeline.json
+├─ runtime-snapshot.json
+├─ runtime-mapping.json
+├─ source-index-report.json       # 仅提供 --source 时
+├─ hybrid-report.json             # 仅运行混合候选阶段时
 └─ logs/
-   ├─ conversion.log          # 完整转换日志
-   ├─ data-patch-apply.log    # 仅使用 --server-jar 时生成
-   └─ server-asset-discovery.log
+   ├─ conversion.log
+   ├─ runtime-extractor.log
+   ├─ runtime-extractor-command.txt
+   ├─ data-patch-apply.log
+   ├─ server-asset-discovery.log
+   ├─ runtime-work/
+   └─ hybrid-selection/
+      └─ attempt-*/data-patch-apply.log
 ```
 
-若转换在标准报告生成前失败，输出目录会包含 `failure-report.txt`，存在结构化诊断时还会写出 `failure-diagnostics.json`。
+重点文件：
 
-ZIP 条目顺序和时间戳固定；报告会记录产物大小、SHA-256 和展开资源树 hash，便于复现与审计。
+- `runtime-pipeline.json`：每一阶段是否执行、成功或回退；
+- `runtime-snapshot.json`：Mod 在官方运行时实际注册的 Content 三阶段快照；
+- `runtime-mapping.json`：动态 mapper 的成功、未支持和资产选择结果；
+- `hybrid-report.json`：源码候选、DataPatcher 每轮筛选、接受/剔除/未决路径；
+- `report.md` / `report.json`：最终内容、文件、诊断和验证总报告；
+- `logs/`：完整运行日志，不应只看终端最后几行。
 
-## 如何理解报告
+若可选源码索引或 AST 候选阶段失败，程序会保守回退到 JAR 动态基础结果并写明原因；不会把未经验证的源码候选静默加入产物。
 
-### 总体状态
+## 如何判断结果
+
+Content 结果：
 
 | 状态 | 含义 |
 |---|---|
-| `SUCCESS` | 保留给未来“所有必需验证均完成”的结果；当前 CLI 通常不会给出此状态 |
-| `PARTIAL` | 已生成候选产物，但存在降级或仍需 Desktop/服务器地图人工验证 |
-| `REJECTED` | 结构或 runtime apply 发现不可接受错误；产物只能用于排错 |
-| `FAILED` | 转换流程未能完成 |
+| `converted` | 已生成目标数据，当前未发现已知语义损失 |
+| `degraded` | 已生成可加载候选，但 Java-only 行为、字段或模板存在损失/替换 |
+| `excluded` | 按项目边界主动排除 |
+| `unsupported` | 当前 mapper 或 DP 模型无法表达 |
+| `failed` | 该项转换失败 |
 
-### Content 结果
+验证阶段：
 
-- `converted`：已生成可表达的数据内容，未发现该声明的已知语义损失；
-- `degraded`：已生成可加载候选，但一个或多个源行为被替换、近似或删除；
-- `excluded`：按项目范围主动排除；
-- `unsupported`：当前实现或 DP 模型无法转换；
-- `failed`：该声明转换失败。
-
-### 文件结果
-
-- `copied`：按字节复制；
-- `converted`：发生规范化、内容导出、命名空间或路径重写；
-- `excluded` / `unsupported` / `failed`：原因和关联诊断码会逐文件列出。
-
-### 验证阶段
-
-| 阶段 | 自动化程度 |
+| 阶段 | 含义 |
 |---|---|
-| `STRUCTURE` | 自动检查 v159.7 路径、扩展、内容类型、basename 和 generated 规则 |
-| `RUNTIME` | 仅在指定 `--server-jar` 时真实执行 B480 parser/apply |
-| `MAP_IMPORT` | 当前必须在真实 Desktop 人工验证 |
-| `SERVER_LOAD` | 当前必须让真实服务器加载携带 DP 的地图/存档 |
+| `STRUCTURE` | ZIP、目录、根 Content、命名和引用静态检查 |
+| `RUNTIME` | 官方 B480 `DataManager.load` / `DataPatcher.apply` |
+| `MAP_IMPORT` | 真实 Desktop 地图编辑器导入；当前需人工测试 |
+| `SERVER_LOAD` | 真实服务器加载携带 DP 的地图/存档；当前需人工测试 |
 
-**退出码 `0` 不等于无损转换。**它只表示当前静态检查及已启用的 apply 验证没有发现 error；只要地图导入或服务器地图加载尚未验证，报告仍可保持 `PARTIAL`。
+`DataPatcher.apply` 的 0 failed / 0 warning 只证明数据可解析和注册，不证明炮塔开火、工厂生产、单位 AI、自定义 Effect、音频播放或地图保存重开与原 Mod 等价。
 
-CLI 退出码：
+最低人工验收：
 
-| 退出码 | 含义 |
-|---:|---|
-| `0` | 产物已生成，未发现静态/apply error |
-| `2` | 产物已生成，但报告为 rejected 或包含必须处理的 error |
-| `3` | 输入被拒绝或转换无法生成标准产物；查看 failure report |
-| `4` | 未预期的内部错误 |
+1. 用精确的 v159.7/B480 Desktop 导入 DP；
+2. 在地图中放置代表性的方块、炮塔、工厂和单位；
+3. 检查建造栏底图、full icon、outline、构件、特效和音效；
+4. 保存地图，完全退出客户端，再重开；
+5. 用匹配 B480 服务器实际加载该地图/存档并联机测试。
 
-## Saturation Firepower 实测
+## New Horizon 2.2.1 自动实测
 
-[RA2EXE/Saturation-Firepower](https://github.com/RA2EXE/Saturation-Firepower) 是当前高价值回归样本。针对其带源码的 Java Mod 工程，当前版本得到：
+使用发布 JAR 与对应源码 ZIP 执行完整 `runtime-convert`：
 
 | 指标 | 结果 |
 |---|---:|
-| 根 Content | 358 |
-| `converted` / `degraded` | 295 / 63 |
-| Content `unsupported` / `failed` | 0 / 0 |
-| 外部资产 | 2276 |
-| Data Assets 总数 | 2634 |
-| B480 DataPatcher apply | 0 failed，0 warning |
-| 离线生成 full icon / outline | 87 / 326 |
-| 明确报告的离线图标缺失/不支持项目 | 152 |
-| 自动化测试 | 59 passed，0 failed（含 Web API 集成测试） |
+| 官方运行时 Content | 382 |
+| 动态 Item/Liquid/Status | 56 |
+| runtime-guided Block/Unit 候选 | 141 |
+| DataPatcher 接受 | 87（85 Block + 2 Unit） |
+| 最终 Content / 外部资产 | 143 / 1635 |
+| 最终 DataPatcher failed / warning | 0 / 0 |
+| 最终报告 error | 0 |
 
-真实 B480 Desktop 已能导入生成 ZIP 并进入地图；最新测试反馈中，大部分单位、炮塔、工厂、建造栏组合图和描边已达到预期。该证据说明项目已能处理大型典型 Java Mod 的大部分原版可表达数据，但 **63 个 degraded Content 不等于原 Java 专用行为已被还原**，服务器真实地图加载仍需继续验证。
+本地验证产物（`work/` 已被 `.gitignore` 排除，不随仓库分发）：
 
-完整进度和技术记录见：
+```text
+work/runtime-convert-new-horizon-final2-20260801/NewHorizonMod.2.2.1-dp-v159.7.zip
+SHA-256: 86721D815437D7039CF950E56C409039D79B800C7D2D6EEAC8175E692C7F61FE
+```
 
-- [项目状态](docs/PROJECT_STATUS.md)
-- [架构设计](docs/ARCHITECTURE.md)
-- [测试与人工验收](docs/TESTING.md)
-- [Web UI、HTTP API 与安全部署](docs/WEB_UI.md)
-- [Java → DP 映射规则](docs/JAVA_TO_DP_MAPPING_V1597.md)
-- [B480 DataPatcher 验证语义](docs/DATA_PATCH_APPLY_VALIDATION.md)
-- [B480 客户端导入与已知问题](docs/B480_CLIENT_IMPORT_FIX_20260730.md)
+该结果证明自动链路能够恢复并筛选大型典型 Java Mod 的一部分地图玩法内容；真实 Desktop 导入、炮塔/工厂/单位玩法、地图保存重开和服务器地图加载仍待人工验证。
 
-## 已知局限
+## 当前已知限制
 
-1. **仅针对 v159.7/B480。**未来其他版本应使用独立 target adapter、ClassMap 和 runtime 验证，不能直接复用并宣称兼容。
-2. **DP 不是 Java 运行时。**自定义类、回调、方法覆写、脚本和完全自定义特效无法通用还原。
-3. **源码决定 Java 转换上限。**仅含 class 的 JAR 不进行字节码反编译。
-4. **Headless apply 不验证客户端表现。**它不会完整构建 Desktop atlas、播放音频或测试真实地图持久化。
-5. **音频不自动转码。**扩展名与容器不一致时只警告并保留原字节，避免不可控质量和许可变化。
-6. **已有 DP 的文本尽量保持字节。**这是为了保护 generated content hash；普通 Mod 因重写命名空间必须规范化文本，仍需客户端检查 generated 资源。
-7. **B480 存在上游退出崩溃。**大型/多页 Data Assets 场景在退出地图或无核心编辑器地图退出时，可能触发 `DataImagePacker.unload()` 的 `key cannot be null`。该问题无法在不破坏资产的前提下由纯 DP 修复，应由客户端上游修补；详见上述 B480 客户端文档。
-8. **Web UI 是单实例本地任务层。**当前没有内置认证、用户隔离、分布式队列、对象存储或病毒扫描；远程部署必须在反向代理层补充 HTTPS、认证、授权和限流。
+1. 纯动态 mapper 当前重点覆盖 Item、Liquid 和 StatusEffect；没有源码时，大量 Block/Unit 会明确保持 unsupported。
+2. 有源码时只采用运行时确认且 DataPatcher 严格通过的 Block/Unit 候选，不保证覆盖全部内容。
+3. 自定义 Java 类、方法覆写、lambda、事件处理、实体实现和网络/UI 逻辑不能通用变成 DP。
+4. 原 Mod 若依赖其他 Mod、旧版 API 或非官方运行时而无法在官方 v159.7 加载，extractor 会失败并保留日志。
+5. Headless apply 不验证 Desktop atlas、真实渲染、音频播放或地图持久化。
+6. 音频当前不自动转码；扩展名与容器不一致会报告并保留原始字节。
+7. v159.7/B480 客户端大型 Data Assets 场景存在上游 `DataImagePacker.unload()` 退出崩溃，详见 `docs/B480_EXIT_UNLOAD_CRASH_20260730.md`。
 
-## 安全模型
+## Web UI 状态
 
-- 拒绝绝对路径、`..`、ZIP Slip、异常长路径和危险归档结构；
-- 限制输入大小、条目数、单条目/总展开大小和压缩比；
-- 输入 Mod 的源码、class、脚本和构建文件永不执行；
-- Java 语义仅通过确定性 AST 规则解释；
-- 输出使用确定性路径排序、固定 ZIP 时间戳和 hash；
-- 只有用户显式提供的 `--server-jar` 会被执行，必须视为受信任程序。
-- Web 上传执行 `Content-Length` 和流式硬上限，净化文件名，并为每个 UUID 作业创建隔离目录；
-- Web 转换在独立 CLI JVM 中运行，并限制并发；终止任务时会终止该 CLI 进程及其后代；
-- Web 默认仅监听 `127.0.0.1`，并以 HTTP `Host` 白名单降低 DNS rebinding 风险；白名单不替代身份验证，不能因此被视为可直接公开托管。
-
-报告和日志可能包含输入名称及本机绝对路径。公开提交 Issue 前请先检查并脱敏；也请确认你有权分享输入 Mod、日志和转换后资产。
+`bridge-web` 保留为早期安全静态 `convert` 模式的历史实现，但已退出当前主线。动态模式需要执行用户提供的 Mod JAR，项目不再以网页上传或公网部署为设计目标，也不建议把这项能力暴露为远程服务。
 
 ## 开发
 
-模块划分：
+主要模块：
 
 | 模块 | 职责 |
 |---|---|
 | `bridge-model` | 报告、诊断、文件/Content 结果和验证阶段模型 |
-| `bridge-java-static` | JavaParser AST 静态导出与降级记录 |
-| `bridge-target-api` | 目标版本验证接口 |
-| `bridge-converter` | 安全读取、输入识别、转换规划、命名空间、资产检查、打包 |
-| `bridge-target-1597` | v159.7 结构检查与 B480 隔离验证 |
-| `bridge-cli` | Picocli 命令、日志、报告合并和退出码 |
-| `bridge-web` | 本地 HTTP API、任务队列、CLI 子进程隔离、SSE 日志和嵌入式 Web UI |
+| `bridge-source-index` | JAR class/资产与可选源码的静态来源索引 |
+| `bridge-runtime-extractor` | 官方运行时独立 JVM 加载、三阶段快照与预算控制 |
+| `bridge-runtime-assets` | 发布 JAR 资产选择、碰撞和来源报告 |
+| `bridge-runtime-mapper` | v159.7 动态快照到 DP 根内容的版本绑定映射 |
+| `bridge-java-static` | 不执行源码的 Java AST 导出与 runtime-guided Block/Unit 候选 |
+| `bridge-converter` | 安全读取、命名空间、资源检查、离线贴图和确定性打包 |
+| `bridge-target-1597` | v159.7 结构检查和官方 DataPatcher harness |
+| `bridge-cli` | 两种命令、子进程编排、单调筛选、日志和最终报告 |
+| `bridge-web` | 已停止主线维护的历史本地 Web UI |
 
 运行测试：
 
 ```powershell
-.\scripts\gradle.ps1 test
+.\scripts\gradle.ps1 test --no-daemon
 ```
 
-提交问题时，建议附上：工具版本、目标 Mindustry build、CLI 命令、`report.json`、`report.md`、`logs/`、客户端/服务器日志，以及最小可复现输入；上传前请先脱敏并确认输入许可。
+提交问题时请附上：目标 Mindustry build、完整 CLI 命令、`runtime-pipeline.json`、`runtime-mapping.json`、`hybrid-report.json`（如有）、`report.json`、`report.md` 和 `logs/`。公开前请先脱敏并确认输入 Mod 许可证允许分享。
 
 ## 额外声明
 
 本项目为vibe coding产物，使用模型为gpt5.6-sol，初版为8小时内完成开发，仅以饱和火力为参照与测试mod，实际对于其他mod的转换以及转换产物可用性未得到验证，本项目正处于初期开发阶段，可能存在较多bug，如发现问题请积极提交
 
+> 上述原句为初版历史声明，予以原样保留。此后项目已使用 New Horizon 2.2.1 完成自动 `runtime-convert --source` E2E 验证；但其真实 Desktop 地图导入、玩法、保存重开和服务器地图/存档加载仍未验证，因此仍不应将自动 apply 通过解释为完整可用性证明。
+
 ## 许可证
 
 本项目以 [GNU General Public License v3.0](LICENSE) 发布。
 
-第三方组件、Mindustry v159.7 参考资源及测试语料边界见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+第三方组件、Mindustry 参考资源和测试语料边界见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)：
 
-- 转换器的许可证不会替你重新许可输入 Mod；
-- 转换产物中的源码、贴图、音频及其他资产仍受原作者许可证和相关权利约束；
-- 使用、分发或公开托管转换产物前，请自行确认原 Mod 许可证允许相应行为；
-- `bridge-converter/src/main/resources/io/github/moddpbridge/converter/mindustry-v159/turret-bases/` 中的 v159.7 炮塔底座参考 PNG 来源于 [Anuken/Mindustry](https://github.com/Anuken/Mindustry)，并依其 GPLv3 条款使用和分发。
-
-完整的第三方组件版本、来源、许可证选择及本地参考样本边界见
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+- 转换器许可证不会替你重新许可输入 Mod；
+- 转换产物中的源码、贴图、音频和其他资产仍受原作者许可证约束；
+- 使用、分发或公开转换产物前，请自行确认原 Mod 许可证允许相应行为；
+- `bridge-converter/src/main/resources/io/github/moddpbridge/converter/mindustry-v159/turret-bases/` 中的参考 PNG 来源于 Mindustry，并依 GPLv3 使用和分发。

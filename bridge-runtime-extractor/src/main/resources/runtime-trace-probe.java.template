@@ -1,6 +1,5 @@
 package bridgeprobe;
 
-import arc.struct.Seq;
 import mindustry.Vars;
 import mindustry.core.ContentLoader;
 import mindustry.ctype.Content;
@@ -24,16 +23,19 @@ public class RuntimeTraceProbe extends Plugin {
     private static final Path traceFile = propertyPath("moddpbridge.runtimeTraceFile");
     private static final Path phaseFile = propertyPath("moddpbridge.runtimePhaseFile");
     private static final Path statusFile = propertyPath("moddpbridge.runtimeTrackerStatusFile");
+    private static final Path preContentInitSnapshotFile = propertyPath("moddpbridge.runtimePreContentInitSnapshotFile");
+    private static final Path postContentInitSnapshotFile = propertyPath("moddpbridge.runtimePostContentInitSnapshotFile");
+    private static final Path finalSnapshotFile = propertyPath("moddpbridge.runtimeFinalSnapshotFile");
+    private static boolean finalSnapshotWritten;
 
     public RuntimeTraceProbe() {
         try {
+            RuntimeSnapshotSupport.initializeTrustedMetadata();
             if (Vars.content == null) {
                 refuse("Vars.content was null before tracker installation.");
             }
-            for (Seq<Content> sequence : Vars.content.getContentMap()) {
-                if (!sequence.isEmpty()) {
-                    refuse("Content registry was not empty before tracker installation.");
-                }
+            if (!RuntimeSnapshotSupport.registryIsEmpty()) {
+                refuse("Content registry was not empty before tracker installation.");
             }
             Vars.content = new TrackingContentLoader();
             write(statusFile, "installed\n");
@@ -62,33 +64,40 @@ public class RuntimeTraceProbe extends Plugin {
 
         @Override
         public void init() {
-            int preInit = countTargetContent();
-            append(phaseFile, "PRE_INIT\t" + preInit + "\n");
-            System.out.println("DPBRIDGE_PHASE\tPRE_INIT\t" + preInit);
+            int preInit = writeSnapshot(preContentInitSnapshotFile, "PRE_CONTENT_INIT");
+            append(phaseFile, "PRE_CONTENT_INIT\t" + preInit + "\n");
+            System.out.println("DPBRIDGE_PHASE\tPRE_CONTENT_INIT\t" + preInit);
             super.init();
-            int postInit = countTargetContent();
-            append(phaseFile, "POST_INIT\t" + postInit + "\n");
-            writeTraces();
-            System.out.println("DPBRIDGE_PHASE\tPOST_INIT\t" + postInit);
+            int postInit = writeSnapshot(postContentInitSnapshotFile, "POST_CONTENT_INIT");
+            append(phaseFile, "POST_CONTENT_INIT\t" + postInit + "\n");
+            System.out.println("DPBRIDGE_PHASE\tPOST_CONTENT_INIT\t" + postInit);
         }
     }
 
-    private static int countTargetContent() {
-        int count = 0;
-        for (Seq<Content> sequence : Vars.content.getContentMap()) {
-            for (Content content : sequence) {
-                if (belongsToTarget(content)) count++;
-            }
+    /**
+     * Called reflectively by the worker from ServerLoadEvent, after every Mod.init() has completed.
+     */
+    public synchronized void captureFinalAfterModInit() {
+        if (finalSnapshotWritten) return;
+        int count = writeSnapshot(finalSnapshotFile, "FINAL_AFTER_MOD_INIT");
+        append(phaseFile, "FINAL_AFTER_MOD_INIT\t" + count + "\n");
+        writeTraces();
+        finalSnapshotWritten = true;
+        System.out.println("DPBRIDGE_PHASE\tFINAL_AFTER_MOD_INIT\t" + count);
+    }
+
+    private static int writeSnapshot(Path file, String phase) {
+        try {
+            return RuntimeSnapshotSupport.write(file, targetMod, phase);
+        } catch (Exception error) {
+            throw new RuntimeException("Could not freeze runtime snapshot for phase " + phase + ".", error);
         }
-        return count;
     }
 
     private static void writeTraces() {
         StringBuilder output = new StringBuilder();
-        for (Seq<Content> sequence : Vars.content.getContentMap()) {
-            for (Content content : sequence) {
-                if (!belongsToTarget(content)) continue;
-                String name = content instanceof MappableContent mapped ? mapped.name : content.toString();
+        for (Content content : RuntimeSnapshotSupport.targetContents(targetMod)) {
+                String name = RuntimeSnapshotSupport.contentName(content);
                 StackTraceElement[] stack = traces.get(content);
                 StringBuilder rendered = new StringBuilder();
                 if (stack != null) {
@@ -98,18 +107,15 @@ public class RuntimeTraceProbe extends Plugin {
                         rendered.append(frame).append('\n');
                     }
                 }
-                output.append(encode(name)).append('\t').append(encode(rendered.toString())).append('\n');
-            }
+                output.append(encode(RuntimeSnapshotSupport.contentTypeName(content))).append('\t')
+                    .append(encode(name)).append('\t')
+                    .append(encode(rendered.toString())).append('\n');
         }
         try {
             write(traceFile, output.toString());
         } catch (Exception error) {
             throw new RuntimeException("Could not write runtime registration traces.", error);
         }
-    }
-
-    private static boolean belongsToTarget(Content content) {
-        return content.minfo.mod != null && content.minfo.mod.name.equalsIgnoreCase(targetMod);
     }
 
     private static void refuse(String reason) throws Exception {

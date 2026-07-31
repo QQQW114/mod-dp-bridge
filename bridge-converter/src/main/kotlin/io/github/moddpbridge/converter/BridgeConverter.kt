@@ -22,6 +22,7 @@ import io.github.moddpbridge.model.toMarkdown
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Locale
 
 data class SecurityLimits(
     val maxInputBytes: Long = 64_000_000L,
@@ -93,7 +94,21 @@ class ConversionException(
 
 /** Deterministic, offline converter. It never executes Java/JS code from the input. */
 object BridgeConverter {
-    fun convert(request: ConversionRequest): ConverterResult {
+    fun convert(request: ConversionRequest): ConverterResult = convertInternal(request, runtime = null)
+
+    /**
+     * Packages an already-mapped runtime snapshot without loading Mod code or invoking static
+     * exporters. The release JAR is still read through [SafeSourceReader].
+     */
+    fun convertRuntimePrepared(
+        request: ConversionRequest,
+        runtime: RuntimePreparedConversion,
+    ): ConverterResult = convertInternal(request, runtime)
+
+    private fun convertInternal(
+        request: ConversionRequest,
+        runtime: RuntimePreparedConversion?,
+    ): ConverterResult {
         val logger = ConverterLogger(request.logSink)
         val diagnostics = mutableListOf<Diagnostic>()
         try {
@@ -103,26 +118,25 @@ object BridgeConverter {
             val detection = SourceDetector.detect(snapshot)
             logger.log("Detected source: ${detection.kind.name.lowercase()}")
 
-            val configuredExporters = request.staticSourceExporters ?: StaticSourceExporters.discover(
-                onFailure = { error ->
-                    diagnostics += Diagnostic(
-                        code = "STATIC_EXPORTER_DISCOVERY_FAILED",
-                        severity = DiagnosticSeverity.ERROR,
-                        message = "A configured static source exporter could not be loaded.",
-                        stage = ValidationStage.STRUCTURE,
-                        details = "${error.javaClass.name}: ${error.message.orEmpty()}",
-                        suggestion = "Repair the provider class/META-INF/services entry; ordinary assets were still processed.",
-                    )
-                    logger.log("Static source exporter discovery failed: ${error.message ?: error.javaClass.simpleName}")
-                },
-            )
-            val staticExport = runStaticExporters(
-                configuredExporters,
-                snapshot,
-                detection,
-                diagnostics,
-                logger,
-            )
+            val staticExport = if (runtime == null) {
+                val configuredExporters = request.staticSourceExporters ?: StaticSourceExporters.discover(
+                    onFailure = { error ->
+                        diagnostics += Diagnostic(
+                            code = "STATIC_EXPORTER_DISCOVERY_FAILED",
+                            severity = DiagnosticSeverity.ERROR,
+                            message = "A configured static source exporter could not be loaded.",
+                            stage = ValidationStage.STRUCTURE,
+                            details = "${error.javaClass.name}: ${error.message.orEmpty()}",
+                            suggestion = "Repair the provider class/META-INF/services entry; ordinary assets were still processed.",
+                        )
+                        logger.log("Static source exporter discovery failed: ${error.message ?: error.javaClass.simpleName}")
+                    },
+                )
+                runStaticExporters(configuredExporters, snapshot, detection, diagnostics, logger)
+            } else {
+                logger.log("Using inert runtime-prepared declarations; static source exporters are disabled.")
+                prepareRuntimeAggregate(runtime, snapshot, detection, diagnostics, logger)
+            }
             val plan = ConversionPlanner.plan(snapshot, detection, staticExport, diagnostics, logger)
             if (plan.outputFiles.isEmpty()) {
                 fail(
@@ -171,10 +185,17 @@ object BridgeConverter {
                 plan = plan,
                 diagnostics = diagnostics,
                 outputs = outputs,
+                runtimePrepared = runtime != null,
             )
             Files.writeString(reportJson, ConversionReportJson.encode(report) + "\n", StandardCharsets.UTF_8)
             Files.writeString(reportMarkdown, report.toMarkdown(), StandardCharsets.UTF_8)
-            logger.log("Conversion completed with static validation; runtime validation was not run.")
+            logger.log(
+                if (runtime == null) {
+                    "Conversion completed with static validation; runtime validation was not run."
+                } else {
+                    "Runtime-prepared conversion was deterministically planned and packaged; DP runtime validation was not run."
+                },
+            )
 
             return ConverterResult(
                 sourceKind = sourceKind,
@@ -226,6 +247,307 @@ object BridgeConverter {
         }
     }
 
+    private fun prepareRuntimeAggregate(
+        runtime: RuntimePreparedConversion,
+        snapshot: SourceSnapshot,
+        detection: SourceDetection,
+        diagnostics: MutableList<Diagnostic>,
+        logger: ConverterLogger,
+    ): StaticExportAggregate {
+        if (detection.kind != DetectedSourceKind.MOD ||
+            !snapshot.originalName.endsWith(".jar", ignoreCase = true)
+        ) {
+            fail(
+                code = "RUNTIME_PREPARED_REQUIRES_MOD_JAR",
+                message = "Runtime-prepared conversion requires the published Mod .jar as input.",
+                diagnostics = diagnostics,
+                logger = logger,
+            )
+        }
+
+        diagnostics += runtime.diagnostics
+        runtime.logs.forEach { logger.log("[runtime-prepared] $it") }
+
+        val entriesByPath = snapshot.entries.associateBy { it.path }
+        val generated = mutableListOf<StaticGeneratedFile>()
+        val emittedBySource = linkedMapOf<String, MutableList<String>>()
+        val jarCopiedSources = hashSetOf<String>()
+        val preparedPathRewrites = linkedMapOf<String, String>()
+        val originalPatchOutputs = snapshot.entries.asSequence()
+            .filter { isOriginalPatchPath(it.path) }
+            .map { runtimeAssetRelativePath(it.path) }
+            .map { it.lowercase(Locale.ROOT) }
+            .toSet()
+
+        runtime.files.sortedBy { it.outputPath }.forEach { file ->
+            val sourcePaths = file.sourcePaths.map { source ->
+                canonicalRuntimeSourcePath(source, snapshot, entriesByPath, diagnostics, logger)
+            }.distinct().sorted()
+            if (sourcePaths.isEmpty()) {
+                fail(
+                    code = "RUNTIME_PREPARED_PROVENANCE_MISSING",
+                    message = "Runtime-prepared output '${file.outputPath}' has no release-JAR provenance.",
+                    diagnostics = diagnostics,
+                    logger = logger,
+                )
+            }
+
+            val rawOutputPath = normalizeRuntimeOutputPath(file.outputPath, diagnostics, logger)
+            if (rawOutputPath.lowercase(Locale.ROOT) in originalPatchOutputs) {
+                fail(
+                    code = "RUNTIME_PREPARED_PATCH_REPLACEMENT_FORBIDDEN",
+                    message = "Runtime-prepared output may not replace an existing patch entry: '$rawOutputPath'.",
+                    diagnostics = diagnostics,
+                    logger = logger,
+                )
+            }
+            val (outputPath, assetRewriteReason) = if (file.bytes == null) {
+                if (sourcePaths.size != 1) {
+                    fail(
+                        code = "RUNTIME_PREPARED_JAR_COPY_AMBIGUOUS",
+                        message = "A release-JAR byte copy must identify exactly one source entry: '$rawOutputPath'.",
+                        diagnostics = diagnostics,
+                        logger = logger,
+                    )
+                }
+                ConversionPlanner.applyPreparedModAssetPathRules(rawOutputPath, detection.modNamespace)
+            } else {
+                rawOutputPath to null
+            }
+            preparedPathRewrites[rawOutputPath] = outputPath
+
+            val bytes = file.bytes?.copyOf() ?: entriesByPath.getValue(sourcePaths.single()).bytes.copyOf()
+            val namespace = when (file.namespace) {
+                RuntimePreparedOutputNamespace.SOURCE -> StaticOutputNamespace.SOURCE
+                RuntimePreparedOutputNamespace.TARGET -> StaticOutputNamespace.TARGET
+            }
+            generated += StaticGeneratedFile(
+                outputPath = outputPath,
+                bytes = bytes,
+                sourcePaths = sourcePaths,
+                namespace = namespace,
+                reason = listOfNotNull(file.reason, assetRewriteReason).distinct().joinToString(" "),
+            )
+            sourcePaths.filterNot(::isOriginalPatchPath).forEach { source ->
+                emittedBySource.getOrPut(source, ::mutableListOf) += outputPath
+                if (file.bytes == null) jarCopiedSources += source
+            }
+        }
+
+        val outputPaths = generated.map { it.outputPath }.toSet()
+        val outcomes = linkedMapOf<String, StaticSourceOutcome>()
+        runtime.fileResults.sortedBy { it.sourcePath }.forEach { result ->
+            val sourcePath = canonicalRuntimeSourcePath(
+                result.sourcePath,
+                snapshot,
+                entriesByPath,
+                diagnostics,
+                logger,
+            )
+            if (isOriginalPatchPath(sourcePath)) {
+                fail(
+                    code = "RUNTIME_PREPARED_PATCH_REPLACEMENT_FORBIDDEN",
+                    message = "Existing patch entries are preserved and may not be claimed by runtime-prepared results.",
+                    diagnostics = diagnostics,
+                    logger = logger,
+                )
+            }
+            if (sourcePath in outcomes) {
+                fail(
+                    code = "RUNTIME_PREPARED_SOURCE_CONFLICT",
+                    message = "More than one runtime-prepared result claims '$sourcePath'.",
+                    diagnostics = diagnostics,
+                    logger = logger,
+                )
+            }
+            val declaredOutputs = result.outputPaths.map { path ->
+                val normalized = normalizeRuntimeOutputPath(path, diagnostics, logger)
+                preparedPathRewrites[normalized] ?: normalized
+            }
+            val linkedOutputs = (declaredOutputs + emittedBySource[sourcePath].orEmpty()).distinct().sorted()
+            val missing = linkedOutputs.firstOrNull { it !in outputPaths }
+            if (missing != null) {
+                fail(
+                    code = "RUNTIME_PREPARED_OUTPUT_MISSING",
+                    message = "Runtime-prepared file result for '$sourcePath' refers to an output that was not emitted: '$missing'.",
+                    diagnostics = diagnostics,
+                    logger = logger,
+                )
+            }
+            outcomes[sourcePath] = StaticSourceOutcome(
+                sourcePath = sourcePath,
+                status = result.status,
+                reason = result.reason,
+                outputPaths = linkedOutputs,
+                diagnosticCodes = result.diagnosticCodes.distinct(),
+            )
+        }
+
+        emittedBySource.forEach { (sourcePath, paths) ->
+            val existing = outcomes[sourcePath]
+            if (existing != null) {
+                outcomes[sourcePath] = existing.copy(outputPaths = (existing.outputPaths + paths).distinct().sorted())
+            } else {
+                outcomes[sourcePath] = StaticSourceOutcome(
+                    sourcePath = sourcePath,
+                    status = if (sourcePath in jarCopiedSources) ConvertedFileStatus.COPIED else ConvertedFileStatus.NORMALIZED,
+                    reason = if (sourcePath in jarCopiedSources) {
+                        "Selected from the authoritative release JAR by the runtime asset stage."
+                    } else {
+                        "Runtime-observed content was mapped to inert target data assets."
+                    },
+                    outputPaths = paths.distinct().sorted(),
+                )
+            }
+        }
+
+        snapshot.entries.forEach { entry ->
+            val replacementReason = when {
+                runtime.replaceOriginalContent && isOriginalContentPath(entry.path) ->
+                    "Original declarative content was replaced by the authoritative runtime snapshot."
+                isOriginalRuntimeAssetPath(entry.path) ->
+                    "The authoritative filtered runtime asset list did not select this JAR entry."
+                else -> null
+            }
+            if (replacementReason != null && !isOriginalPatchPath(entry.path)) {
+                outcomes.putIfAbsent(
+                    entry.path,
+                    StaticSourceOutcome(
+                        sourcePath = entry.path,
+                        status = ConvertedFileStatus.EXCLUDED,
+                        reason = replacementReason,
+                    ),
+                )
+            }
+        }
+
+        val contentResults = runtime.contentResults.map(RuntimePreparedContentResult::toModel)
+        validateRuntimePreparedReportContract(generated, outcomes, contentResults, diagnostics)
+        logger.log(
+            "Accepted ${generated.size} runtime-prepared file(s), ${contentResults.size} content result(s), " +
+                "and ${outcomes.size} release-JAR file outcome(s).",
+        )
+        return StaticExportAggregate(
+            generatedFiles = generated,
+            sourceOutcomes = outcomes,
+            contentResults = contentResults,
+            metadata = runtime.metadata + mapOf(
+                "runtimePrepared.generatedFiles" to generated.size.toString(),
+                "runtimePrepared.claimedSourceFiles" to outcomes.size.toString(),
+                "runtimePrepared.contentResults" to contentResults.size.toString(),
+                "runtimePrepared.originalContentReplaced" to runtime.replaceOriginalContent.toString(),
+            ),
+        )
+    }
+
+    private fun canonicalRuntimeSourcePath(
+        raw: String,
+        snapshot: SourceSnapshot,
+        entriesByPath: Map<String, SourceEntry>,
+        diagnostics: MutableList<Diagnostic>,
+        logger: ConverterLogger,
+    ): String {
+        val normalized = normalizeRuntimePath(raw, "source entry", diagnostics, logger)
+        if (normalized in entriesByPath) return normalized
+        val stripped = snapshot.strippedRoot?.let { root ->
+            normalized.removePrefix("$root/").takeIf { it != normalized }
+        }
+        if (stripped != null && stripped in entriesByPath) return stripped
+        fail(
+            code = "RUNTIME_PREPARED_UNKNOWN_SOURCE",
+            message = "Runtime-prepared provenance refers to an unknown release-JAR entry: '$raw'.",
+            diagnostics = diagnostics,
+            logger = logger,
+        )
+    }
+
+    private fun normalizeRuntimeOutputPath(
+        raw: String,
+        diagnostics: MutableList<Diagnostic>,
+        logger: ConverterLogger,
+    ): String = normalizeRuntimePath(raw, "output", diagnostics, logger)
+
+    private fun normalizeRuntimePath(
+        raw: String,
+        description: String,
+        diagnostics: MutableList<Diagnostic>,
+        logger: ConverterLogger,
+    ): String {
+        val replaced = raw.replace('\\', '/')
+        val segments = replaced.split('/')
+        if (
+            replaced.isBlank() || replaced.startsWith('/') || Regex("^[A-Za-z]:").containsMatchIn(replaced) ||
+            ':' in replaced || '\u0000' in replaced || segments.any { it.isBlank() || it == "." || it == ".." }
+        ) {
+            fail(
+                code = "RUNTIME_PREPARED_PATH_INVALID",
+                message = "Runtime-prepared $description path is unsafe: '$raw'.",
+                diagnostics = diagnostics,
+                logger = logger,
+            )
+        }
+        return segments.joinToString("/")
+    }
+
+    private fun validateRuntimePreparedReportContract(
+        generated: List<StaticGeneratedFile>,
+        outcomes: Map<String, StaticSourceOutcome>,
+        contents: List<io.github.moddpbridge.model.ContentResult>,
+        diagnostics: MutableList<Diagnostic>,
+    ) {
+        val generatedPaths = generated.map { it.outputPath }.toSet()
+        generated.asSequence()
+            .filter { it.outputPath.startsWith("content/", ignoreCase = true) }
+            .filter { output -> contents.none { it.outputPath == output.outputPath } }
+            .forEach { output ->
+                diagnostics += Diagnostic(
+                    code = "RUNTIME_PREPARED_CONTENT_RESULT_MISSING",
+                    severity = DiagnosticSeverity.ERROR,
+                    message = "Runtime-generated content is missing its declaration-level result.",
+                    stage = ValidationStage.STRUCTURE,
+                    details = output.outputPath,
+                )
+            }
+        contents.filter {
+            it.disposition == ContentDisposition.CONVERTED || it.disposition == ContentDisposition.DEGRADED
+        }.filter { it.outputPath == null || it.outputPath !in generatedPaths }.forEach { content ->
+            diagnostics += Diagnostic(
+                code = "RUNTIME_PREPARED_CONTENT_OUTPUT_MISSING",
+                severity = DiagnosticSeverity.ERROR,
+                message = "A converted runtime content result has no matching prepared HJSON file.",
+                stage = ValidationStage.STRUCTURE,
+                location = content.location,
+                details = "${content.sourceSymbol} -> ${content.outputPath ?: "<none>"}",
+            )
+        }
+        outcomes.values.flatMap { outcome -> outcome.outputPaths.map { outcome to it } }
+            .filter { (_, outputPath) -> outputPath !in generatedPaths }
+            .forEach { (outcome, outputPath) ->
+                diagnostics += Diagnostic(
+                    code = "RUNTIME_PREPARED_FILE_OUTPUT_MISSING",
+                    severity = DiagnosticSeverity.ERROR,
+                    message = "A runtime-prepared file result refers to an output that was not emitted.",
+                    stage = ValidationStage.STRUCTURE,
+                    details = "${outcome.sourcePath} -> $outputPath",
+                )
+            }
+    }
+
+    private fun isOriginalContentPath(path: String): Boolean = runtimeAssetRelativePath(path)
+        .substringBefore('/')
+        .equals("content", ignoreCase = true)
+
+    private fun isOriginalPatchPath(path: String): Boolean = runtimeAssetRelativePath(path)
+        .substringBefore('/')
+        .equals("patches", ignoreCase = true)
+
+    private fun isOriginalRuntimeAssetPath(path: String): Boolean = runtimeAssetRelativePath(path)
+        .substringBefore('/')
+        .lowercase(Locale.ROOT) in setOf("bundles", "sprites", "sounds", "music")
+
+    private fun runtimeAssetRelativePath(path: String): String =
+        if (path.substringBefore('/').equals("assets", ignoreCase = true)) path.substringAfter('/', "") else path
+
     private fun buildReport(
         snapshot: SourceSnapshot,
         sourceKind: SourceKind,
@@ -233,6 +555,7 @@ object BridgeConverter {
         plan: ConversionPlan,
         diagnostics: List<Diagnostic>,
         outputs: List<OutputArtifact>,
+        runtimePrepared: Boolean,
     ): ConversionReport {
         val infos = diagnostics.count { it.severity == DiagnosticSeverity.INFO }
         val warnings = diagnostics.count { it.severity == DiagnosticSeverity.WARNING }
@@ -273,7 +596,11 @@ object BridgeConverter {
                 gameVersion = "159.7",
                 commit = "c9686eb5d0ae5dd47ee02c40f99f7d5018ccbc8c",
                 dataPatchFormatVersion = 2,
-                description = "Static Data Assets conversion; runtime validation pending.",
+                description = if (runtimePrepared) {
+                    "Runtime-observed content mapped to Data Assets; DP runtime validation pending."
+                } else {
+                    "Static Data Assets conversion; runtime validation pending."
+                },
             ),
             source = SourceDescriptor(
                 kind = sourceKind,
@@ -328,7 +655,7 @@ object BridgeConverter {
                 "policyExcludedFiles" to fileResults.count { it.disposition == FileDisposition.EXCLUDED }.toString(),
                 "unsupportedFiles" to fileResults.count { it.disposition == FileDisposition.UNSUPPORTED }.toString(),
                 "failedFiles" to fileResults.count { it.disposition == FileDisposition.FAILED }.toString(),
-            ) + plan.metadata,
+            ) + (if (runtimePrepared) mapOf("runtimePrepared" to "true") else emptyMap()) + plan.metadata,
         )
     }
 
