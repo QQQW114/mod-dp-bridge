@@ -18,7 +18,7 @@ CLI 进程、进度、实时日志、取消、报告和下载。
 本版本只支持同一台机器上的单个可信操作员：
 
 - 默认监听 `127.0.0.1:8080`；
-- 运行时能力默认关闭；
+- 运行时能力服务端默认关闭（fail-closed）；`start-web.bat` 会在默认/指定 Server JAR 通过固定 SHA-256 校验后自动开启；
 - 启用运行时能力时，监听地址必须解析为 loopback，否则 `runtimeReady=false`；
 - 没有账号、认证、授权、租户隔离、病毒扫描、对象存储或分布式队列；
 - 不支持公网、远程上传、受信任内网共享或多用户部署；
@@ -74,18 +74,19 @@ bridge-web/build/install/mod-dp-bridge-web/
 不需要 Gradle。相对 `-WorkDir` 按仓库或分发包根目录解析，`-NoBrowser` 禁止服务
 就绪后自动打开浏览器。
 
-快捷脚本始终强制 `MOD_DP_BRIDGE_HOST=127.0.0.1`。未传 `-ServerJar` 时，它会显式
-设置 `MOD_DP_BRIDGE_ENABLE_RUNTIME=false` 并清除继承的 Server JAR 环境变量；传入时
-则要求普通非符号链接文件并在启动前校验下面的固定 SHA-256。启动器在前台运行，
-控制台保留完整日志，可用 `Ctrl+C` 停止。
+快捷脚本始终强制 `MOD_DP_BRIDGE_HOST=127.0.0.1`。运行时默认开启：未传 `-ServerJar`
+时自动探测仓库/分发包根目录下 `work/mindustry-v159.7-server-release.jar`，存在且通过
+固定 SHA-256 校验即启用；默认 JAR 缺失时回退静态模式并给出提示。显式传入
+`-ServerJar` 时要求普通非符号链接文件并在启动前校验固定 SHA-256；`-NoRuntime` 强制
+关闭运行时。启动器在前台运行，控制台保留完整日志，可用 `Ctrl+C` 停止。
 
 ### 只启用静态模式
 
-不设置运行时开关即可启动：
+用 `-NoRuntime` 显式关闭运行时：
 
 ```powershell
-.\start-web.bat
-# 或直接运行已构建的底层启动器：
+.\start-web.bat -NoRuntime
+# 或直接运行已构建的底层启动器（不设置运行时环境变量即保持静态）：
 .\bridge-web\build\install\mod-dp-bridge-web\bin\mod-dp-bridge-web.bat
 ```
 
@@ -102,6 +103,9 @@ http://127.0.0.1:8080/
 ```powershell
 # 推荐：快捷启动器会设置并校验这些关键变量
 .\start-web.bat -ServerJar "C:\path\to\official-v159.7-server-release.jar"
+
+# 默认探测：不传 -ServerJar 时自动启用 work/mindustry-v159.7-server-release.jar
+.\start-web.bat
 
 # 高级/调试方式：手动启动底层分发程序
 $env:MOD_DP_BRIDGE_HOST = "127.0.0.1"

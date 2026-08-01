@@ -32,7 +32,7 @@
 
 项目不对发布 JAR 做通用反编译。
 
-Web UI 只是这两种 CLI 模式之上的任务管理层。运行时能力默认关闭；启用后仍只允许本机 loopback 使用，如你想要部署网站，需改动项目并自行负责安全问题。
+本地 Web UI 只是这两种 CLI 模式之上的任务管理层。运行时能力默认随本机启动脚本开启（仅当官方 v159.7 Server JAR 存在并通过固定 SHA-256 校验），仍只允许本机 loopback 使用，如你想要部署网站，需改动项目并自行负责安全问题。
 
 ## 两种转换模式
 
@@ -236,12 +236,13 @@ Windows 仓库可直接双击 `start-web.bat`，或在 PowerShell 中运行：
 .\start-web.bat
 ```
 
-首次从仓库启动时会自动构建 Web 分发目录；解压 `mod-dp-bridge-web-0.2.0.zip` 后运行包内同名脚本则不需要 Gradle。未提供 Server JAR 时脚本会明确关闭运行时执行，只保留静态模式。
+首次从仓库启动时会自动构建 Web 分发目录；解压 `mod-dp-bridge-web-0.2.0.zip` 后运行包内同名脚本则不需要 Gradle。运行时转换默认开启：脚本会自动探测仓库内 `work/mindustry-v159.7-server-release.jar`，存在且通过固定 SHA-256 校验即启用；默认 JAR 缺失时回退到静态模式。
 
-要启用可信 JAR + 可选源码转换，显式传入固定官方 v159.7/B480 Server JAR：
+要显式指定可信官方 v159.7/B480 Server JAR，或强制关闭运行时：
 
 ```powershell
 .\start-web.bat -ServerJar "C:\path\to\Mindustry-v159.7-server.jar"
+.\start-web.bat -NoRuntime
 .\start-web.bat -Port 8081 -WorkDir "D:\bridge-work"
 ```
 
@@ -344,7 +345,7 @@ Content 结果：
 
 ## Web UI 状态
 
-`bridge-web` 在 0.2.0 中作为本地任务管理入口，提供静态/可信运行时双模式。它默认关闭运行时执行，只允许 loopback；没有认证、授权、租户隔离或安全沙箱，不支持公网部署和远程用户上传。
+`bridge-web` 在 0.2.0 中恢复为本地任务管理入口，并提供静态/可信运行时双模式。运行时执行默认随启动脚本开启（仅当官方 v159.7 Server JAR 存在且通过固定 SHA-256 校验），可用 `-NoRuntime` 关闭，只允许 loopback；没有认证、授权、租户隔离或安全沙箱，明确不支持公网部署和远程用户上传。
 
 运行时作业接收发布 JAR 和可选源码 ZIP。Server JAR 只能由本机操作员配置，不能通过网页上传或由请求指定。网页可查看进度与终端日志、取消任务、下载 DP 和完整日志，并折叠显示完成、降级、排除、不支持和失败项。
 
@@ -363,7 +364,7 @@ Content 结果：
 | `bridge-converter` | 安全读取、命名空间、资源检查、离线贴图和确定性打包 |
 | `bridge-target-1597` | v159.7 结构检查和官方 DataPatcher harness |
 | `bridge-cli` | 两种命令、子进程编排、单调筛选、日志和最终报告 |
-| `bridge-web` | 默认关闭运行时能力、仅 loopback 的本地静态/可信运行时任务 UI |
+| `bridge-web` | 运行时随启动脚本默认开启（默认 JAR 缺失时回退静态）、仅 loopback 的本地静态/可信运行时任务 UI |
 
 当前版本为 **0.2.0**，变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。运行测试：
 

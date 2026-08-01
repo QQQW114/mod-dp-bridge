@@ -392,7 +392,8 @@ Mindustry 的 ContentAsset/generated 资源可能使用内容文本的精确哈�
 
 ## 本地 Web 双模式任务编排
 
-`bridge-web` 是 CLI 的本地薄适配层。运行时能力默认关闭；即使启用也只允许 loopback：
+`bridge-web` 是 CLI 的本地薄适配层。运行时能力服务端默认关闭（fail-closed）；启动脚本
+`scripts/start-web.ps1` 会在固定 Server JAR 存在并通过 SHA-256 校验后自动开启，即使启用也只允许 loopback：
 
 ```text
 Browser

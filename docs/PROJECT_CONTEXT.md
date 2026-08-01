@@ -40,7 +40,7 @@
 - 独立 JVM 不是安全沙箱，只处理可信 JAR；
 - Mod JAR 是运行时内容和资产权威；
 - 源码只提供静态候选，不能覆盖 JAR资产；
-- Web 运行时能力默认关闭，启用时必须由操作员配置固定 Server JAR 和执行开关；
+- Web 运行时能力服务端默认关闭（fail-closed）；`start-web.bat` 会探测 `work/mindustry-v159.7-server-release.jar`，存在且通过固定 SHA-256 校验即自动开启，`-NoRuntime` 可显式关闭；
 - 每个 Web 运行时作业必须再次确认信任，Server JAR 不能由浏览器上传或指定；
 - Web 仅允许 loopback，没有认证、授权、租户隔离或沙箱，不得用作远程上传服务；
 - 目标只支持官方 v159.7/B480。

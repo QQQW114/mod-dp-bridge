@@ -5,12 +5,21 @@ Starts the local mod-dp-bridge Web UI.
 .DESCRIPTION
 Starts the Web UI from either a source checkout or an unpacked Web distribution.
 In a source checkout, the script builds bridge-web:installDist automatically when
-the launcher is missing. Runtime extraction is disabled unless -ServerJar is
-provided explicitly. The service is always bound to 127.0.0.1.
+the launcher is missing. Runtime extraction is enabled by default when the verified
+official v159.7 Server JAR is found at work/mindustry-v159.7-server-release.jar
+(relative to the repository or distribution root); a missing default JAR falls back
+to static conversion. Pass -ServerJar to pin a specific JAR, or -NoRuntime to
+disable runtime extraction explicitly. The service is always bound to 127.0.0.1.
 
 .PARAMETER ServerJar
-Path to the trusted, unmodified Mindustry v159.7 server-release.jar. Supplying
-this parameter enables runtime extraction after the file and SHA-256 are checked.
+Path to the trusted, unmodified Mindustry v159.7 server-release.jar. When omitted,
+the default work/mindustry-v159.7-server-release.jar is probed and enabled if it
+exists and matches the pinned SHA-256. Runtime extraction is always enabled only
+after the file and SHA-256 are checked.
+
+.PARAMETER NoRuntime
+Disable runtime extraction even when a default or explicitly supplied Server JAR
+is available, leaving static conversion only.
 
 .PARAMETER Port
 Loopback TCP port for the Web UI. The default is 8080.
@@ -32,11 +41,16 @@ Print command usage and exit without building or starting the application.
 .\scripts\start-web.ps1 -ServerJar "C:\Mindustry\server-release.jar"
 
 .EXAMPLE
+.\scripts\start-web.ps1 -NoRuntime
+
+.EXAMPLE
 .\scripts\start-web.ps1 -Port 8081 -WorkDir "D:\mod-dp-bridge-work" -NoBrowser
 #>
 [CmdletBinding()]
 param(
     [string] $ServerJar,
+
+    [switch] $NoRuntime,
 
     [ValidateRange(1, 65535)]
     [int] $Port = 8080,
@@ -51,6 +65,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $expectedServerSha256 = 'E41289C32BCF765EB50FA131E6B515D741E20F7843FB567D3AA949E7461F22AB'
+$defaultServerJar = 'work/mindustry-v159.7-server-release.jar'
 
 function Get-LiteralFileSha256([string] $Path) {
     $algorithm = [System.Security.Cryptography.SHA256]::Create()
@@ -68,6 +83,23 @@ function Get-LiteralFileSha256([string] $Path) {
         if ($null -ne $stream) { $stream.Dispose() }
         $algorithm.Dispose()
     }
+}
+
+function Assert-ServerJar([string] $Path) {
+    $serverItem = Get-Item -LiteralPath $Path -Force
+    if (-not ($serverItem -is [System.IO.FileInfo])) {
+        throw "Server JAR must point to a regular file: $Path"
+    }
+    if (($serverItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Server JAR must not be a symbolic link or another reparse point: $Path"
+    }
+
+    $validated = $serverItem.FullName
+    $actualHash = Get-LiteralFileSha256 $validated
+    if ($actualHash -ne $expectedServerSha256) {
+        throw "Mindustry Server SHA-256 mismatch. Expected $expectedServerSha256 but found $actualHash."
+    }
+    return $validated
 }
 
 if ($Help) {
@@ -122,21 +154,21 @@ if ([System.IO.Path]::IsPathRooted($WorkDir)) {
 New-Item -ItemType Directory -Path $resolvedWorkDir -Force | Out-Null
 
 $validatedServerPath = $null
-if ([string]::IsNullOrWhiteSpace($ServerJar)) {
-    # Runtime remains disabled below; inherited values are deliberately ignored.
+if ($NoRuntime) {
+    # Explicit opt-out wins over any -ServerJar and inherited values.
+    if (-not [string]::IsNullOrWhiteSpace($ServerJar)) {
+        Write-Host '[mod-dp-bridge] -NoRuntime overrides -ServerJar; runtime extraction remains disabled.' -ForegroundColor Yellow
+    }
+} elseif (-not [string]::IsNullOrWhiteSpace($ServerJar)) {
+    $validatedServerPath = Assert-ServerJar $ServerJar
 } else {
-    $serverItem = Get-Item -LiteralPath $ServerJar -Force
-    if (-not ($serverItem -is [System.IO.FileInfo])) {
-        throw "-ServerJar must point to a regular file: $ServerJar"
-    }
-    if (($serverItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "-ServerJar must not be a symbolic link or another reparse point: $ServerJar"
-    }
-
-    $validatedServerPath = $serverItem.FullName
-    $actualHash = Get-LiteralFileSha256 $validatedServerPath
-    if ($actualHash -ne $expectedServerSha256) {
-        throw "Mindustry Server SHA-256 mismatch. Expected $expectedServerSha256 but found $actualHash."
+    $defaultPath = Join-Path $applicationRoot $defaultServerJar
+    if (Test-Path -LiteralPath $defaultPath -PathType Leaf) {
+        Write-Host "[mod-dp-bridge] Probing default runtime Server JAR: $defaultPath" -ForegroundColor DarkGray
+        $validatedServerPath = Assert-ServerJar $defaultPath
+    } else {
+        Write-Host "[mod-dp-bridge] Default runtime Server JAR not found: $defaultPath" -ForegroundColor Yellow
+        Write-Host '[mod-dp-bridge] Falling back to static conversion. Pass -ServerJar to enable runtime extraction, or use -NoRuntime to keep it disabled.' -ForegroundColor Yellow
     }
 }
 

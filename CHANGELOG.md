@@ -2,6 +2,16 @@
 
 本项目遵循语义化版本号。由于转换器仍处于实验阶段，`0.x` 版本之间可能调整命令、报告和 HTTP API。
 
+## Unreleased
+
+### 修复
+
+- 修复第三方 Mod 元数据/content 中以裸 `"`、`'` 或 `"""` 书写的多行字符串导致 JSON/HJSON 解析直接失败的问题（hjson-java 不接收字符串内裸换行）。原生解析失败后自动改写为转义单行字符串，并发出 `MULTILINE_STRING_COMPATIBILITY_REPAIR` 警告；legacy CP 路径同样接入该修复。
+
+### 变更
+
+- `scripts/start-web.ps1` / `start-web.bat` 默认开启运行时转换：未传 `-ServerJar` 时自动探测仓库内 `work/mindustry-v159.7-server-release.jar`，存在且通过固定 SHA-256 校验即启用运行时；默认 JAR 缺失时回退静态模式并提示。新增 `-NoRuntime` 参数可显式关闭。
+
 ## 0.2.0 - 2026-08-02
 
 ### 新增
