@@ -223,7 +223,7 @@ class Mindustry1597StructuralValidator : TargetValidator {
         )
         val status = if (structurePassed) ConversionStatus.PARTIAL else ConversionStatus.REJECTED
         val report = ConversionReport(
-            toolVersion = "0.1.0-SNAPSHOT",
+            toolVersion = "0.2.0",
             target = target,
             source = SourceDescriptor(
                 kind = if (Files.isDirectory(candidate)) SourceKind.DIRECTORY else SourceKind.DATA_PACK_ARCHIVE,

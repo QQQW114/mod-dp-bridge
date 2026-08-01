@@ -18,6 +18,10 @@ fun main() {
     println("Work directory: ${config.workDirectory}")
     println("Allowed HTTP hosts: ${config.allowedHosts.sorted().joinToString()}")
     println("Upload limit: ${config.maxUploadBytes / (1024L * 1024L)} MiB; concurrent jobs: ${config.maxConcurrentJobs}")
+    println(
+        if (config.runtimeReady) "Runtime conversion: ready (trusted local inputs only)"
+        else "Runtime conversion: unavailable (${config.runtimeReason ?: "runtime_not_ready"})",
+    )
     stopped.await()
 }
 

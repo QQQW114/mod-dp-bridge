@@ -1,9 +1,12 @@
 package io.github.moddpbridge.web
 
 import java.net.InetSocketAddress
+import java.net.InetAddress
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.time.Duration
 import kotlin.io.path.absolute
 
@@ -21,6 +24,11 @@ data class WebConfig(
     val retention: Duration,
     val serverJar: Path?,
     val serverTimeoutSeconds: Long,
+    val runtimeEnabled: Boolean,
+    val runtimeReady: Boolean,
+    val runtimeReason: String?,
+    val runtimeTimeoutSeconds: Long,
+    val hybridMaxRounds: Int,
     val javaCommand: String,
     val cliClasspath: String,
 ) {
@@ -39,6 +47,12 @@ data class WebConfig(
                 ?.takeIf { it > 0 } ?: default
             fun positiveLong(name: String, default: Long): Long = env(name)?.toLongOrNull()
                 ?.takeIf { it > 0 } ?: default
+            fun boolean(name: String, default: Boolean): Boolean = when (val value = env(name)?.lowercase()) {
+                null -> default
+                "1", "true", "yes", "on" -> true
+                "0", "false", "no", "off" -> false
+                else -> error("$name must be true or false, not '$value'.")
+            }
 
             val work = Path.of(env("MOD_DP_BRIDGE_WORK_DIR") ?: "work/web-jobs").absolute().normalize()
             Files.createDirectories(work)
@@ -55,6 +69,8 @@ data class WebConfig(
                     ?.forEach(::add)
             }
             val configuredJar = env("MOD_DP_BRIDGE_SERVER_JAR")?.let { Path.of(it).absolute().normalize() }
+            val runtimeEnabled = boolean("MOD_DP_BRIDGE_ENABLE_RUNTIME", false)
+            val runtimeReadiness = runtimeReadiness(runtimeEnabled, host, configuredJar)
             val javaHome = systemProperties["java.home"] ?: error("java.home is unavailable")
             val defaultJava = Path.of(
                 javaHome,
@@ -77,6 +93,11 @@ data class WebConfig(
                 retention = Duration.ofHours(positiveLong("MOD_DP_BRIDGE_JOB_RETENTION_HOURS", 24)),
                 serverJar = configuredJar,
                 serverTimeoutSeconds = positiveLong("MOD_DP_BRIDGE_SERVER_TIMEOUT_SECONDS", 60),
+                runtimeEnabled = runtimeEnabled,
+                runtimeReady = runtimeReadiness.first,
+                runtimeReason = runtimeReadiness.second,
+                runtimeTimeoutSeconds = positiveLong("MOD_DP_BRIDGE_RUNTIME_TIMEOUT_SECONDS", 120),
+                hybridMaxRounds = positiveInt("MOD_DP_BRIDGE_HYBRID_MAX_ROUNDS", 8),
                 javaCommand = env("MOD_DP_BRIDGE_JAVA") ?: defaultJava,
                 cliClasspath = normalizeClasspath(
                     env("MOD_DP_BRIDGE_CLI_CLASSPATH")
@@ -84,6 +105,42 @@ data class WebConfig(
                         ?: error("java.class.path is unavailable"),
                 ),
             )
+        }
+
+        private fun runtimeReadiness(enabled: Boolean, host: String, serverJar: Path?): Pair<Boolean, String?> {
+            if (!enabled) return false to "runtime_execution_disabled"
+            if (!isLoopbackBinding(host)) return false to "runtime_requires_loopback_binding"
+            if (
+                serverJar == null ||
+                Files.isSymbolicLink(serverJar) ||
+                !Files.isRegularFile(serverJar, LinkOption.NOFOLLOW_LINKS)
+            ) {
+                return false to "runtime_server_jar_unavailable"
+            }
+            val digest = runCatching { sha256(serverJar) }.getOrNull()
+                ?: return false to "runtime_server_jar_unreadable"
+            if (!digest.equals(OFFICIAL_MINDUSTRY_1597_SERVER_SHA256, ignoreCase = true)) {
+                return false to "runtime_server_jar_sha256_mismatch"
+            }
+            return true to null
+        }
+
+        private fun isLoopbackBinding(host: String): Boolean = runCatching {
+            val addresses = InetAddress.getAllByName(host)
+            addresses.isNotEmpty() && addresses.all(InetAddress::isLoopbackAddress)
+        }.getOrDefault(false)
+
+        private fun sha256(path: Path): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            Files.newInputStream(path).use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read > 0) digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
         }
 
         private fun normalizeClasspath(value: String): String {
@@ -111,5 +168,8 @@ data class WebConfig(
             }
             return candidate.trim().trimEnd('.').lowercase().takeIf(String::isNotEmpty)
         }
+
+        internal const val OFFICIAL_MINDUSTRY_1597_SERVER_SHA256 =
+            "e41289c32bcf765eb50fa131e6b515d741e20f7843fb567d3aa949e7461f22ab"
     }
 }

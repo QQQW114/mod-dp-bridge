@@ -15,14 +15,39 @@ import java.nio.file.StandardOpenOption
 
 internal data class UploadedFile(val path: Path, val originalName: String, val sizeBytes: Long)
 
+internal enum class ConversionMode(val apiName: String) {
+    STATIC("static"),
+    RUNTIME("runtime");
+
+    companion object {
+        fun parse(value: String?): ConversionMode? = entries.firstOrNull { it.apiName == value?.trim()?.lowercase() }
+    }
+}
+
+internal data class ConversionUpload(
+    val mode: ConversionMode,
+    val input: UploadedFile,
+    val source: UploadedFile? = null,
+    val executionAcknowledged: Boolean = false,
+)
+
 internal class UploadException(val statusCode: Int, message: String) : Exception(message)
 
 internal object MultipartUpload {
+    private const val FIELD_STATIC_FILE = "file"
+    private const val FIELD_MOD_JAR = "modJar"
+    private const val FIELD_SOURCE = "source"
+    private const val FIELD_MODE = "mode"
+    private const val FIELD_EXECUTION_ACK = "allowModExecution"
+    private val FILE_FIELDS = setOf(FIELD_STATIC_FILE, FIELD_MOD_JAR, FIELD_SOURCE)
+    private val STATIC_EXTENSIONS = setOf("zip", "jar", "hjson", "json", "json5")
     private const val MAX_HEADER_LINE = 16 * 1024
     private const val MAX_HEADER_BYTES = 64 * 1024
     private const val MAX_MULTIPART_OVERHEAD = 1024L * 1024L
+    private const val MAX_TEXT_FIELD_BYTES = 256L
+    private const val MAX_PARTS = 4
 
-    fun receive(exchange: HttpExchange, inputDirectory: Path, maxFileBytes: Long): UploadedFile {
+    fun receive(exchange: HttpExchange, inputDirectory: Path, maxFileBytes: Long): ConversionUpload {
         val contentType = exchange.requestHeaders.getFirst("Content-Type")
             ?: throw UploadException(415, "Content-Type must be multipart/form-data.")
         val boundary = parseBoundary(contentType)
@@ -44,39 +69,112 @@ internal object MultipartUpload {
         if (opening != "--$boundary") {
             throw UploadException(400, "Malformed multipart opening boundary.")
         }
-
-        val headers = readHeaders(input)
-        val disposition = headers["content-disposition"]
-            ?: throw UploadException(400, "The upload part has no Content-Disposition header.")
-        val field = dispositionParameter(disposition, "name")
-        if (field != "file" && field != "mod") {
-            throw UploadException(400, "The multipart file field must be named 'file'.")
-        }
-        val originalName = dispositionExtendedFilename(disposition)
-            ?: dispositionParameter(disposition, "filename")?.let(::decodeHeaderFilename)
-            ?: throw UploadException(400, "No file was selected.")
-        if (originalName.isBlank()) throw UploadException(400, "No file was selected.")
-
-        val safeName = sanitizeFilename(originalName)
-        val destination = uniqueDestination(inputDirectory, safeName)
+        val files = linkedMapOf<String, UploadedFile>()
+        val textFields = linkedMapOf<String, String>()
+        val writtenFiles = mutableListOf<Path>()
+        var totalFileBytes = 0L
+        var partCount = 0
         try {
-            Files.newOutputStream(
-                destination,
-                StandardOpenOption.CREATE_NEW,
-                StandardOpenOption.WRITE,
-            ).use { output ->
-                copyUntilBoundary(input, output, "\r\n--$boundary".toByteArray(StandardCharsets.US_ASCII), maxFileBytes)
+            while (true) {
+                partCount++
+                if (partCount > MAX_PARTS) throw UploadException(400, "Too many multipart fields were supplied.")
+                val headers = readHeaders(input)
+                val disposition = headers["content-disposition"]
+                    ?: throw UploadException(400, "The upload part has no Content-Disposition header.")
+                val rawField = dispositionParameter(disposition, "name")
+                    ?: throw UploadException(400, "The upload part has no field name.")
+                val field = canonicalField(rawField)
+                    ?: throw UploadException(400, "Unknown multipart field '$rawField'.")
+                val originalName = dispositionExtendedFilename(disposition)
+                    ?: dispositionParameter(disposition, "filename")?.let(::decodeHeaderFilename)
+                val marker = "\r\n--$boundary".toByteArray(StandardCharsets.US_ASCII)
+
+                if (field in FILE_FIELDS) {
+                    if (files.containsKey(field)) throw UploadException(400, "Multipart field '$rawField' was supplied more than once.")
+                    val selectedName = originalName?.takeIf(String::isNotBlank)
+                        ?: throw UploadException(400, "No file was selected for '$rawField'.")
+                    validateExtension(field, selectedName)
+                    val destination = uniqueDestination(inputDirectory, sanitizeFilename(selectedName))
+                    writtenFiles.add(destination)
+                    val remaining = maxFileBytes - totalFileBytes
+                    if (remaining <= 0L) throw UploadException(413, "The combined uploaded files exceed the configured size limit.")
+                    val size = Files.newOutputStream(
+                        destination,
+                        StandardOpenOption.CREATE_NEW,
+                        StandardOpenOption.WRITE,
+                    ).use { output -> copyUntilBoundary(input, output, marker, remaining) }
+                    if (size == 0L) throw UploadException(400, "The uploaded file '$selectedName' is empty.")
+                    totalFileBytes = Math.addExact(totalFileBytes, size)
+                    files[field] = UploadedFile(destination, selectedName, size)
+                } else {
+                    if (originalName != null) throw UploadException(400, "Text field '$rawField' must not contain a file.")
+                    if (textFields.containsKey(field)) throw UploadException(400, "Multipart field '$rawField' was supplied more than once.")
+                    val output = ByteArrayOutputStream()
+                    copyUntilBoundary(input, output, marker, MAX_TEXT_FIELD_BYTES)
+                    textFields[field] = output.toString(StandardCharsets.UTF_8).trim()
+                }
+
+                when (val suffix = readAsciiLine(input)) {
+                    "--" -> break
+                    "" -> Unit
+                    else -> throw UploadException(400, "Malformed multipart boundary suffix '$suffix'.")
+                }
             }
-            val suffix = readAsciiLine(input)
-            if (suffix != "--") {
-                throw UploadException(400, "Exactly one multipart file part is supported.")
+
+            if (input.read() >= 0) throw UploadException(400, "Unexpected data followed the closing multipart boundary.")
+
+            val mode = ConversionMode.parse(textFields[FIELD_MODE])
+                ?: throw UploadException(400, "Multipart text field 'mode' must be exactly 'static' or 'runtime'.")
+            return when (mode) {
+                ConversionMode.STATIC -> {
+                    if (files.keys.any { it != FIELD_STATIC_FILE } || FIELD_EXECUTION_ACK in textFields) {
+                        throw UploadException(400, "Static conversion accepts only 'mode=static' and one 'file' upload.")
+                    }
+                    val uploaded = files[FIELD_STATIC_FILE]
+                        ?: throw UploadException(400, "Static conversion requires multipart file field 'file'.")
+                    ConversionUpload(mode, uploaded)
+                }
+
+                ConversionMode.RUNTIME -> {
+                    if (FIELD_STATIC_FILE in files) {
+                        throw UploadException(400, "Runtime conversion requires 'modJar', not the static 'file' field.")
+                    }
+                    val modJar = files[FIELD_MOD_JAR]
+                        ?: throw UploadException(400, "Runtime conversion requires multipart file field 'modJar'.")
+                    val acknowledged = textFields[FIELD_EXECUTION_ACK].equals("true", ignoreCase = true)
+                    if (!acknowledged) {
+                        throw UploadException(
+                            400,
+                            "Runtime conversion requires allowModExecution=true after acknowledging that uploaded code will execute unsandboxed.",
+                        )
+                    }
+                    ConversionUpload(mode, modJar, files[FIELD_SOURCE], executionAcknowledged = true)
+                }
             }
-            val size = Files.size(destination)
-            if (size == 0L) throw UploadException(400, "The uploaded file is empty.")
-            return UploadedFile(destination, originalName, size)
         } catch (error: Throwable) {
-            Files.deleteIfExists(destination)
+            writtenFiles.forEach { path -> runCatching { Files.deleteIfExists(path) } }
             throw error
+        }
+    }
+
+    private fun canonicalField(value: String): String? = when (value) {
+        FIELD_STATIC_FILE -> FIELD_STATIC_FILE
+        FIELD_MOD_JAR, FIELD_SOURCE, FIELD_MODE, FIELD_EXECUTION_ACK -> value
+        else -> null
+    }
+
+    private fun validateExtension(field: String, originalName: String) {
+        val leaf = originalName.replace('\\', '/').substringAfterLast('/')
+        val extension = leaf.substringAfterLast('.', "").lowercase()
+        val allowed = when (field) {
+            FIELD_STATIC_FILE -> STATIC_EXTENSIONS
+            FIELD_MOD_JAR -> setOf("jar")
+            FIELD_SOURCE -> setOf("zip")
+            else -> emptySet()
+        }
+        if (extension !in allowed) {
+            val expected = allowed.sorted().joinToString(" or ") { ".$it" }
+            throw UploadException(415, "Multipart field '$field' requires a $expected file.")
         }
     }
 

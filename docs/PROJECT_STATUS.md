@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-项目主线已经从“网页上传 + 纯静态 Java AST”转为**可信本地运行时转换 CLI**：
+项目 0.2.0 主线是**可信本地运行时转换 CLI + 默认关闭运行时能力、仅 loopback 的本地 Web UI**：
 
 ```text
 可信发布 JAR
@@ -18,11 +18,11 @@
   -> 官方 DataPatcher.apply 最终复验
 ```
 
-该链路已在 New Horizon 2.2.1 的发布 JAR + 对应源码 ZIP 上完整自动跑通，最终复现此前手工实验的 **143 个 Content、0 failed、0 warning** 基线。当前可以认为“根据 Mindustry 真实加载结果反推并生成 DP”已经从可行性实验进入可用原型阶段。
+该链路已在 New Horizon 2.2.1 的发布 JAR + 对应源码 ZIP 上完整自动跑通，最终复现此前手工实验的 **143 个 Content、0 failed、0 warning** 基线。当前可以认为“根据 Mindustry 真实加载结果反推并生成 DP”已经从可行性实验进入可用原型阶段；Web UI 只编排同一 CLI，不增加映射能力。
 
 准确边界仍是：DataPatcher 可加载不等于完整玩法等价；自定义 Java 方法、回调、实体、AI、GUI、网络协议、科技树和 Mod 新地图不迁移。
 
-## New Horizon 最终自动 E2E
+## New Horizon 自动 E2E 与人工结果
 
 输入文件名：
 
@@ -102,7 +102,9 @@ ZIP SHA-256：
 - `MAP_IMPORT = NOT_RUN`
 - `SERVER_LOAD = NOT_RUN`
 
-下一项外部验证应由真实 v159.7/B480 Desktop 导入上述 ZIP，并测试地图保存重开、单位、炮塔、工厂、贴图、音效和退出流程；之后再用服务器加载携带 DP 的真实地图/存档。
+以上是自动报告中记录的阶段。用户随后在真实 v159.7/B480 客户端确认产物能够加载并出现新内容，但炮塔缺少弹药，退出地图时客户端崩溃；服务器地图/存档加载仍未执行。
+
+这说明导入和注册链路可用，但功能验收不通过。New Horizon 大量依赖自行编写的 Java 内容与行为，不适合作为项目总体兼容率样本；它更适合用于说明 DataPatcher 零失败、零警告和客户端能加载仍不能证明玩法等价。
 
 ## 已完成的主线能力
 
@@ -163,12 +165,13 @@ ZIP SHA-256：
 - 只处理可信发布 JAR；
 - 建议在低权限账户、虚拟机或容器中运行；
 - 运行前后校验 Mod JAR 和 Server JAR SHA-256；
-- 动态能力不接入网站或远程上传服务；
-- Web UI 已退出主线，`bridge-web` 仅保留历史静态模式实现。
+- 本地 Web UI 的运行时能力默认关闭，操作员必须配置固定 Server JAR 和显式执行开关；
+- 每个 Web 运行时作业还必须再次确认信任，Server JAR 不能由浏览器上传或指定；
+- Web 只允许 loopback，没有认证、授权、租户隔离或恶意代码沙箱，不得作为公网、内网共享或远程上传服务。
 
 ## 自动化测试
 
-运行时主线重点测试集当前为 **102/102 通过**；全仓 `test --rerun-tasks` 为 **124/124 通过**：
+0.2.0 发布前最终全仓测试为 **131/131 通过**，0 failed / 0 errors / 0 skipped。以下是运行时重点测试集：
 
 | 模块 | 测试数 |
 |---|---:|
@@ -182,9 +185,9 @@ ZIP SHA-256：
 
 覆盖内容包括：晚注册、三阶段删除拒绝、快照预算、Seq Object[]、精确行号来源、partial AST fail-closed、源码/生成预算、空动态 baseline、单调候选剔除、依赖闭包、runtime base 回退、最终严格 apply 等。
 
-全仓额外包含 `bridge-model` 5、`bridge-source-index` 3、`bridge-target-api` 1、`bridge-target-1597` 7 和历史 `bridge-web` 6 项测试。
+全仓额外包含 `bridge-model` 5、`bridge-source-index` 3、`bridge-target-api` 1、`bridge-target-1597` 7 和 `bridge-web` 13 项测试。Web 覆盖双文件上传、执行同意、fail-closed、Request-ID、201 后启动、命令构造、取消进程树、终态产物校验和运行时审计下载。
 
-## 静态转换历史能力
+## 静态转换能力
 
 `convert` 命令仍保留并支持：
 
@@ -200,7 +203,7 @@ Saturation 的客户端退出/无核心地图退出崩溃已定位为 B480 `Data
 - `docs/B480_EXIT_UNLOAD_CRASH_20260730.md`
 - `docs/patches/DataImagePacker-unload-fix.patch`
 
-这些静态历史证据仍有价值，但不再代表项目当前主架构。
+这些静态历史证据仍有价值。`convert` 继续作为 CLI 和 Web UI 的安全静态模式，与可信运行时模式明确分离。
 
 ## 当前硬边界
 
@@ -213,9 +216,8 @@ Saturation 的客户端退出/无核心地图退出崩溃已定位为 B480 `Data
 
 ## 下一步
 
-1. 把 New Horizon 最终 ZIP 交给真实 v159.7/B480 Desktop 测试。
-2. 检查 85 个 Block 与 2 个 Unit 的建造栏、贴图、炮塔/工厂/单位功能和音效。
-3. 保存地图、完全退出客户端并重开；保留日志。
-4. 用匹配 B480 服务器加载该地图/存档。
-5. 根据实际失败继续扩展动态 Unit/Block 对象图 mapper，减少对源码 AST 的依赖。
-6. 保持 Web 停止主线，不把任意 Mod 执行能力包装为公网服务。
+1. 以更接近原版 Data Assets、较少自定义 Java 行为的 Mod 建立代表性兼容样本。
+2. 根据炮塔缺弹药等真实失败继续扩展动态 Unit/Block 对象图 mapper 和缺失项诊断。
+3. 用匹配 B480 服务器加载实际地图/存档。
+4. 完成本地 Web 双模式、loopback 和执行同意回归，并从安装分发包启动烟测。
+5. 保持 Web 仅本机使用，不把任意 Mod 执行能力包装为公网或多用户服务。

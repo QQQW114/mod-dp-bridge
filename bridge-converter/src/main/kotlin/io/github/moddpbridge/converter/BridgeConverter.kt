@@ -588,7 +588,7 @@ object BridgeConverter {
             )
         }
         return ConversionReport(
-            toolVersion = "0.1.0-SNAPSHOT",
+            toolVersion = "0.2.0",
             // Kept deterministic. The caller may add a publication timestamp later.
             generatedAt = null,
             target = TargetDescriptor(

@@ -30,6 +30,17 @@ application {
 distributions {
     main {
         contents {
+            from(rootProject.file("README.md"))
+            from(rootProject.file("CHANGELOG.md"))
+            from(rootProject.file("docs/CLI_RUNTIME_INTEGRATION.md")) {
+                into("docs")
+            }
+            from(rootProject.file("docs/WEB_UI.md")) {
+                into("docs")
+            }
+            from(rootProject.file("docs/TESTING.md")) {
+                into("docs")
+            }
             from(rootProject.file("LICENSE"))
             from(rootProject.file("THIRD_PARTY_NOTICES.md"))
             from(rootProject.file("third-party/licenses")) {

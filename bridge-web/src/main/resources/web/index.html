@@ -34,11 +34,11 @@
 <main id="main-content" class="page-shell">
     <section class="hero" aria-labelledby="page-title">
         <div>
-            <p class="eyebrow"><span>SERVER TOOL</span> / STATIC CONVERSION</p>
+            <p class="eyebrow"><span>LOCAL SERVER TOOL</span> / TRUSTED RUNTIME + STATIC</p>
             <h1 id="page-title">把旧版 Mod 桥接为<br><em>v159.7 / B480 DP</em></h1>
         </div>
         <p class="hero-copy">
-            上传一个 Mindustry 146+ Mod。工具会静态分析内容和资源，尽力迁移单位、建筑、炮塔、物品、流体、音效与贴图，并逐项列出无法还原的部分。
+            显式选择可执行发布 JAR 的本地运行时转换，或不执行上传代码的静态转换。两种模式都会尽力迁移地图玩法内容并逐项报告缺失、降级与失败部分。
         </p>
     </section>
 
@@ -52,6 +52,30 @@
                 </div>
             </header>
 
+            <fieldset id="mode-selector" class="mode-selector">
+                <legend>转换模式</legend>
+                <label id="runtime-mode-card" class="mode-card mode-runtime is-unavailable">
+                    <input id="mode-runtime" type="radio" name="conversion-mode" value="runtime" disabled>
+                    <span class="mode-marker" aria-hidden="true"></span>
+                    <span class="mode-copy">
+                        <strong>运行时转换 <small>JAR + SOURCE</small></strong>
+                        <span>真实加载可信发布 JAR，源码 ZIP 仅用于补充候选。</span>
+                    </span>
+                    <span id="runtime-ready-badge" class="mode-readiness readiness-checking">检查中</span>
+                </label>
+                <p id="runtime-ready-reason" class="mode-reason" role="status">正在检查官方 v159.7 运行环境…</p>
+
+                <label id="static-mode-card" class="mode-card mode-static is-active">
+                    <input id="mode-static" type="radio" name="conversion-mode" value="static" checked>
+                    <span class="mode-marker" aria-hidden="true"></span>
+                    <span class="mode-copy">
+                        <strong>静态转换 <small>SAFE PARSE</small></strong>
+                        <span>处理声明式 Mod、CP、DP 或源码包，不执行上传代码。</span>
+                    </span>
+                    <span class="mode-readiness readiness-ready">可用</span>
+                </label>
+            </fieldset>
+
             <input
                 id="mod-file"
                 class="visually-hidden"
@@ -64,8 +88,8 @@
                     <span class="drop-arrow"></span>
                     <span class="drop-tray"></span>
                 </div>
-                <strong>拖拽 Mod 到这里</strong>
-                <span>或点击选择文件</span>
+                <strong id="drop-title">拖拽静态输入到这里</strong>
+                <span id="drop-subtitle">或点击选择 Mod / CP / DP</span>
                 <small id="file-help">.zip / .jar / .hjson / .json / .json5 · 目录请先压缩</small>
             </div>
 
@@ -80,12 +104,46 @@
                 </button>
             </div>
 
+            <section id="runtime-options" class="runtime-options" aria-labelledby="runtime-options-heading" hidden>
+                <div class="runtime-options-heading">
+                    <div>
+                        <p>OPTIONAL SOURCE</p>
+                        <h3 id="runtime-options-heading">匹配源码 ZIP</h3>
+                    </div>
+                    <span>不执行</span>
+                </div>
+                <input id="source-file" class="visually-hidden" type="file" accept=".zip,application/zip" aria-describedby="source-help">
+                <button id="select-source" class="source-picker" type="button" aria-controls="source-file">
+                    <span class="source-plus" aria-hidden="true">+</span>
+                    <span><strong>选择可选源码 ZIP</strong><small id="source-help">必须与发布 JAR 匹配；仅静态解析 Java 声明</small></span>
+                </button>
+                <div id="selected-source" class="selected-file selected-source" hidden>
+                    <span class="file-glyph source-glyph" aria-hidden="true">SRC</span>
+                    <div class="file-copy">
+                        <strong id="selected-source-name"></strong>
+                        <span id="selected-source-meta"></span>
+                    </div>
+                    <button id="remove-source" class="icon-button" type="button" aria-label="移除源码 ZIP" title="移除源码 ZIP">
+                        <span aria-hidden="true">×</span>
+                    </button>
+                </div>
+
+                <label id="runtime-trust-box" class="runtime-trust">
+                    <input id="allow-mod-execution" type="checkbox">
+                    <span class="trust-check" aria-hidden="true"></span>
+                    <span>
+                        <strong>我确认该 JAR 可信，并允许执行</strong>
+                        <small>发布 JAR 将以本服务账号的完整文件、网络与系统权限执行。独立 JVM <b>不是安全沙箱</b>；仅可提交本地、来源明确且你信任的输入。可选 source ZIP 不会被执行。</small>
+                    </span>
+                </label>
+            </section>
+
             <p id="upload-error" class="inline-message error-message" role="alert" hidden></p>
 
             <div class="primary-actions">
                 <button id="start-button" class="button button-primary" type="button" disabled>
                     <span class="button-icon play-icon" aria-hidden="true"></span>
-                    <span>开始转换</span>
+                    <span id="start-button-label">开始静态转换</span>
                 </button>
                 <button id="cancel-button" class="button button-danger" type="button" disabled>
                     <span class="button-icon stop-icon" aria-hidden="true"></span>
@@ -93,9 +151,13 @@
                 </button>
             </div>
 
-            <aside class="scope-note">
+            <aside id="static-scope-note" class="scope-note">
                 <span class="scope-icon" aria-hidden="true">i</span>
                 <p><strong>静态转换</strong>：服务器不会编译、反射或执行上传 Mod 中的代码。GUI、科技树、新地图和自定义网络逻辑不在迁移范围内。</p>
+            </aside>
+            <aside id="runtime-scope-note" class="scope-note runtime-scope-note" hidden>
+                <span class="scope-icon" aria-hidden="true">!</span>
+                <p><strong>运行时转换</strong>：会在官方 v159.7 中加载发布 JAR 并提取实际注册内容。自定义 Java 行为仍可能无法迁移；请必须审阅转换报告并在客户端与服务器实测。</p>
             </aside>
         </section>
 
@@ -106,6 +168,7 @@
                     <p>CONVERSION</p>
                     <h2 id="process-heading">转换进程</h2>
                 </div>
+                <span id="job-mode" class="job-mode" hidden></span>
                 <span id="job-status" class="status-badge status-idle">等待文件</span>
             </header>
 
@@ -127,6 +190,7 @@
                 </div>
                 <div class="job-meta">
                     <span>任务 <code id="job-id">—</code></span>
+                    <span class="job-input-meta">输入 <code id="job-input">—</code></span>
                     <span>耗时 <time id="elapsed-time">00:00</time></span>
                 </div>
             </div>

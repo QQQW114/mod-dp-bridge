@@ -21,8 +21,9 @@ pinned 官方 v159.7 真实加载发布 JAR
 这条路线不让源码替代运行时事实。发布 JAR 仍决定实际注册 Content 和资产字节；
 源码只能提供对应于 JAR class 调试行号的惰性数据声明候选。
 
-Web 已退出主线。该系统只在本地 CLI 中运行，且必须显式传入
-`--allow-mod-execution`。
+该系统由本地 CLI 实现，且必须显式传入 `--allow-mod-execution`。0.2.0 的本地 Web UI
+可以在操作员预先启用、作业再次确认信任后，用固定参数代理同一命令；它只允许
+loopback，不是远程上传或公网服务。
 
 ## 固定版本与权威输入
 
@@ -262,6 +263,9 @@ work/hybrid-clean-newhorizon-20260801/
 
 该自动 E2E 证明严格 JAR class 行号来源、候选发现、单调筛选、JAR 权威资产打包和
 正式 apply 已经连通；仍不能将 clean parser/apply 解释为 Java 行为或实际地图玩法完全等价。
+
+真实客户端后来能够加载该 DP 并显示新内容，但炮塔缺少弹药，退出地图时崩溃。
+因此 New Horizon 只适合验证 Hybrid 管线和限制，不适合作为项目总体兼容率样本。
 
 ## 与纯运行时对象图的关系
 

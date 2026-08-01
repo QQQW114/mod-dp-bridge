@@ -31,7 +31,7 @@ import picocli.CommandLine.Parameters
 @Command(
     name = "dpbridge",
     mixinStandardHelpOptions = true,
-    version = ["mod-dp-bridge 0.1.0-SNAPSHOT"],
+    version = ["mod-dp-bridge 0.2.0"],
     description = ["Convert Mindustry mods/CP/data packs into v159.7 Data Assets."],
     subcommands = [ConvertCommand::class, RuntimeConvertCommand::class],
 )

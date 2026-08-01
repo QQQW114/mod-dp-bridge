@@ -26,8 +26,9 @@ SHA-256 e41289c32bcf765eb50fa131e6b515d741e20f7843fb567d3aa949e7461f22ab
 --allow-mod-execution
 ```
 
-发布 JAR 以当前用户权限执行。独立 JVM 是故障隔离，不是恶意代码沙箱。Web 已退出
-主线；`bridge-web` 仅保留历史静态功能，不执行或代理 `runtime-convert`。
+发布 JAR 以当前用户权限执行。独立 JVM 是故障隔离，不是恶意代码沙箱。本地
+`bridge-web` 可以在默认关闭的运行时能力被操作员显式启用后代理 `runtime-convert`，
+但仅允许 loopback，且不提供认证、授权、租户隔离或远程执行安全边界。
 
 ## 当前管线
 
@@ -213,6 +214,10 @@ work/hybrid-exact-newhorizon-20260801/
 work/hybrid-units-newhorizon-20260801/
 work/hybrid-clean-newhorizon-20260801/
 ```
+
+真实客户端能够加载产物并显示新内容，但炮塔缺少弹药，退出地图时崩溃；服务器地图/
+存档加载未测试。这表明 Block/Unit 声明被接受不代表其弹药、方法覆写和生命周期行为
+完整，且 New Horizon 不适合作为总体兼容率样本。
 
 ## Java 行为报告语义
 

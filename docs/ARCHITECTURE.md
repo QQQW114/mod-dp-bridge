@@ -11,7 +11,8 @@
 - `convert`：安全静态模式，不执行输入 Mod；
 - `runtime-convert`：当前编译 Java Mod 主线，会在独立 JVM 中真实执行用户明确信任的发布 Mod JAR 和固定官方 Server JAR，必须显式 `--allow-mod-execution`。
 
-独立 JVM 不是安全沙箱。项目不使用 javaagent，动态能力不接入网站。
+独立 JVM 不是安全沙箱。项目不使用 javaagent。`bridge-web` 只能作为默认关闭运行时
+能力、仅 loopback 的本地任务管理层，不能作为远程网站或多用户服务。
 
 当前只有一个目标适配器：Mindustry v159.7/B480。旧 Mod 版本号只表示“尽力读取静态数据”，不是对应历史运行时兼容层。
 
@@ -77,7 +78,7 @@ bridge-cli
   静态/动态命令、子进程、单调 DataPatcher 筛选、日志和报告
 
 bridge-web
-  历史本地静态转换 UI；停止主线维护，不承载 runtime-convert
+  仅 loopback 的本地双模式 UI；静态 convert + 显式可信 runtime-convert
 ```
 
 ## 转换流水线
@@ -123,7 +124,7 @@ bridge-runtime-mapper
 ### `convert` 安全静态流水线
 
 ```text
-CLI 本地路径（历史 Web 仅调用此静态入口）
+CLI 本地路径或 Web 静态作业
         |
         v
 目录 / ZIP / JAR / JSON / HJSON / JSON5
@@ -188,7 +189,9 @@ Mindustry1597StructuralValidator
 以及服务器实际加载携带 DP 的地图/存档
 ```
 
-`bridge-web` 只保留为历史静态 `convert` 调用层，不承载会执行 Mod 的 `runtime-convert`，也不再作为当前部署目标。
+`bridge-web` 对两条入口都只做本地任务编排。静态作业接收一个输入并调用 `convert`；
+运行时作业接收发布 JAR 和可选源码 ZIP，在操作员与作业双重确认后调用
+`runtime-convert`。Web 不重新实现转换规则。
 
 ## 输入读取与安全模型
 
@@ -201,6 +204,11 @@ Mindustry1597StructuralValidator
 - 为源文件和输出记录大小与 SHA-256。
 
 在此静态入口中，输入的 Java、class、JAR 内代码、JavaScript、Gradle/Maven 构建均不会执行。Java 源文本只会交给 JavaParser 建立 AST，随后由项目内置的确定性规则求值；它不使用输入 classpath，也不解析或调用任意 helper 实现。可选服务器验证只执行项目内置固定 harness 和用户显式提供、应当可信的 Server JAR。
+
+运行时入口的安全模型相反：发布 Mod JAR 会以当前服务用户权限真实执行，固定官方
+Server JAR也会执行；可选源码仍只作静态 AST 候选。Web 端必须 fail-closed：运行时
+能力未由操作员启用、固定 Server JAR 未配置或校验失败、作业未明确确认信任、必需
+JAR 缺失时都不得启动 CLI。浏览器不能提供 Server JAR 路径或任意额外命令参数。
 
 ## 输入类型识别
 
@@ -382,10 +390,9 @@ Mindustry 的 ContentAsset/generated 资源可能使用内容文本的精确哈�
 
 二进制资产在没有路径重写时保持字节不变。普通 Mod 文本会规范化；已有 DP content/patch 文本按前述策略保持原字节。
 
-## 历史本地 Web 任务编排（停止主线维护）
+## 本地 Web 双模式任务编排
 
-`bridge-web` 是早期实现的本地静态 `convert` 薄适配层，以下仅保留为历史架构记录。
-它已退出当前主线，不承载、不调用会执行 Mod JAR 的 `runtime-convert`：
+`bridge-web` 是 CLI 的本地薄适配层。运行时能力默认关闭；即使启用也只允许 loopback：
 
 ```text
 Browser
@@ -394,35 +401,44 @@ Browser
 bridge-web HTTP server
   |-- static classpath UI
   |-- Host allowlist / DNS rebinding guard
-  |-- upload byte limit + filename normalization
+  |-- mode + multipart schema + upload byte limit + filename normalization
   |-- UUID job directory + bounded queue
   |-- retention cleanup
   |
   +---- one isolated JVM process per running job
               |
-              v
-          bridge-cli convert
+              +-- static: bridge-cli convert <input>
+              |
+              +-- runtime: bridge-cli runtime-convert
+                    --mod-jar <published.jar>
+                    [--source <source.zip>]
+                    --server-jar <operator-configured pinned jar>
+                    --allow-mod-execution
               |
               +-- stdout/stderr -> terminal log + SSE
-              +-- report.json/report.md/logs/DP ZIP
+              +-- report/runtime audit files/logs/DP ZIP
 ```
 
-该历史实现不允许 Web 端执行输入 Mod，也不允许浏览器参数拼接任意 shell 命令。
-上传文件仅保存到 UUID 隔离目录；CLI 参数以进程参数列表传递，静态转换器随后再次
-执行 ZIP Slip、条目数、展开大小、压缩比和路径检查。
+静态模式不执行输入 Mod。运行时模式会执行发布 JAR，因此必须同时满足操作员全局
+启用和作业级 `allowModExecution=true`。上传文件仅保存到 UUID 隔离目录；CLI 参数
+以固定进程参数列表传递，不经 shell，也不接受浏览器提供的 Server JAR或任意参数。
+源码和其他归档仍会执行 ZIP Slip、条目数、展开大小、压缩比和路径检查。
 
-历史作业状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled`。并发上限默认是 1，
-其余任务排队。运行中取消会终止对应静态 CLI 进程及其后代；已写入日志会保留供审计。
+作业状态为 `queued`、`running`、`succeeded`、`failed`、`cancelled`。并发上限默认是 1，
+其余任务排队。运行中取消会尽力终止 CLI、extractor、Mindustry worker 和验证进程树；
+取消不是事务回滚或安全沙箱，已写入日志会保留供审计。
 
-历史实现将 stdout/stderr 合并写入持久文件并推送 SSE。SSE 只负责低延迟显示，
+服务将 stdout/stderr 合并写入持久文件并推送 SSE。SSE 只负责低延迟显示，
 最终仍以下载的日志归档和 CLI `report.json` 为准，不根据终端文本猜测 Content 成功率。
+运行时日志归档还应包含存在的 `runtime-pipeline.json`、`runtime-snapshot.json`、
+`runtime-mapping.json`、`source-index-report.json` 和 `hybrid-report.json`。
 
-历史本地服务默认绑定 `127.0.0.1:8080`，并使用 HTTP `Host` 白名单降低 DNS rebinding
-风险。这些措施不是身份认证，也不构成将服务暴露到公网的安全保证。
+本地服务默认绑定 `127.0.0.1:8080`，并使用 HTTP `Host` 与 Origin/Sec-Fetch-Site
+检查降低 DNS rebinding 和跨站请求风险。启用运行时能力时，服务必须拒绝非 loopback
+监听。这些措施不是身份认证，也不能约束被执行的 Mod JAR。
 
-该历史实现没有认证、授权、租户隔离或分布式调度。项目已停止 Web 主线和公网部署目标；
-`WEB_UI.md` 只作为历史本地静态 UI/API 记录，不是对外部署指南，也不得用于包装
-`runtime-convert` 或远程执行用户 Mod。
+Web 没有认证、授权、租户隔离或分布式调度。它只面向同一台机器上的单个可信操作员；
+不得监听公网或受信任内网供他人上传，也不得把 Host 白名单误认为访问控制。
 
 ## 报告模型
 
@@ -510,7 +526,7 @@ DataPatcher apply，不更新 RUNTIME/SERVER_LOAD 为 PASSED。
 - 结构或 DataPatcher apply 验证失败：最终报告为 `REJECTED`，CLI 返回非零。
 - 仅 Headless 通过不得升级为 SUCCESS。
 - SUCCESS 只能保留给全部硬验证完成且没有未接受错误的未来流程。
-- 历史 Web 作业的 `succeeded` 只表示静态 CLI 正常结束并生成结果，不覆盖报告中的
+- Web 作业的 `succeeded` 只表示所选 CLI 正常结束并生成结果，不覆盖报告中的
   `PARTIAL`/`REJECTED` 等转换语义。
 - HTTP 2xx、健康检查和 SSE 正常连接均不是 DP 可加载性的证据。
 
@@ -521,5 +537,5 @@ DataPatcher apply，不更新 RUNTIME/SERVER_LOAD 为 PASSED。
 - 扩展纯运行时 Unit/Block 的有界对象图 mapper，并继续收紧 runtime-guided AST 候选诊断；
   不使用 javaagent，也不执行源码仓库的 Gradle/Maven/脚本。
 - 多目标版本适配器：需要独立的目标源码、ClassMap 和运行时验证，不能把 v159.7 规则直接宣称兼容 146–158。
-- 保持 `bridge-web` 为停止主线维护的历史静态实现；不将 `runtime-convert` 的任意 Mod
-  执行能力接入 Web、远程上传或公网服务。
+- 保持 `bridge-web` 的运行时能力默认关闭、仅 loopback、双重执行同意和固定参数；
+  不将任意 Mod 执行能力变成远程上传、公网或多用户服务。

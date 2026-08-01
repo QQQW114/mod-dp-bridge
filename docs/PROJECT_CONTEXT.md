@@ -6,6 +6,7 @@
 
 - `README.md`
 - `docs/PROJECT_STATUS.md`
+- `docs/WEB_UI.md`
 - `docs/CLI_RUNTIME_INTEGRATION.md`
 - `docs/DYNAMIC_RUNTIME_EXTRACTION.md`
 - `docs/RUNTIME_SNAPSHOT_SCHEMA.md`
@@ -15,7 +16,7 @@
 
 ## 当前主线
 
-项目已停止把 Web UI 当作主线。当前目标是本地 CLI：
+0.2.0 当前主线是本地 CLI 与默认关闭运行时能力、仅 loopback 的本地 Web UI：
 
 ```text
 可信发布 JAR
@@ -28,7 +29,7 @@
 -> 最终官方 DataPatcher.apply
 ```
 
-不使用 javaagent。源码不执行、不编译、不运行 Gradle/Maven；发布 JAR 和 Server JAR会执行。
+不使用 javaagent。源码不执行、不编译、不运行 Gradle/Maven；发布 JAR 和 Server JAR 会执行。Web 只编排同一 CLI，不增加转换或隔离能力。
 
 ## 固定安全约束
 
@@ -39,7 +40,9 @@
 - 独立 JVM 不是安全沙箱，只处理可信 JAR；
 - Mod JAR 是运行时内容和资产权威；
 - 源码只提供静态候选，不能覆盖 JAR资产；
-- 动态能力不得接入网站或远程上传服务；
+- Web 运行时能力默认关闭，启用时必须由操作员配置固定 Server JAR 和执行开关；
+- 每个 Web 运行时作业必须再次确认信任，Server JAR 不能由浏览器上传或指定；
+- Web 仅允许 loopback，没有认证、授权、租户隔离或沙箱，不得用作远程上传服务；
 - 目标只支持官方 v159.7/B480。
 
 ## 当前已验证基线
@@ -95,6 +98,10 @@ RUNTIME = PASSED
 MAP_IMPORT = NOT_RUN
 SERVER_LOAD = NOT_RUN
 ```
+
+后续人工结果：客户端能够加载并出现新内容，但炮塔缺少弹药，退出地图时崩溃。
+因此 New Horizon 不适合作为总体兼容率样本；它只证明自动提取、筛选、打包和导入链路
+能够运行，不能证明玩法语义等价。服务器地图/存档加载仍未执行。
 
 ## 关键实现事实
 
@@ -152,6 +159,11 @@ bridge-cli/src/main/kotlin/io/github/moddpbridge/cli/RuntimeConversionPipeline.k
 bridge-cli/src/main/kotlin/io/github/moddpbridge/cli/RuntimeExtractorProcess.kt
 bridge-cli/src/main/kotlin/io/github/moddpbridge/cli/RuntimeHybridSourceSelection.kt
 bridge-cli/src/main/kotlin/io/github/moddpbridge/cli/MonotonicDataPatchCandidateSelector.kt
+
+bridge-web/src/main/kotlin/io/github/moddpbridge/web/WebConfig.kt
+bridge-web/src/main/kotlin/io/github/moddpbridge/web/JobManager.kt
+bridge-web/src/main/kotlin/io/github/moddpbridge/web/MultipartUpload.kt
+bridge-web/src/main/kotlin/io/github/moddpbridge/web/BridgeWebServer.kt
 ```
 
 ## 构建与测试
@@ -175,12 +187,13 @@ Windows 中文路径必须优先使用：
   --no-daemon --rerun-tasks
 ```
 
-当前重点测试集：102/102 通过；全仓测试：124/124 通过。
+运行时重点测试集：102/102 通过；0.2.0 最终全仓为 131/131 通过。新增的
+13 项 Web 测试覆盖双文件、执行同意、fail-closed、Request-ID、取消竞态、终态产物与审计下载。
 
-构建 CLI：
+构建 CLI 与 Web：
 
 ```powershell
-.\scripts\gradle.ps1 :bridge-cli:installDist --no-daemon
+.\scripts\gradle.ps1 :bridge-cli:installDist :bridge-web:installDist --no-daemon
 ```
 
 New Horizon E2E：
@@ -211,12 +224,11 @@ New Horizon E2E：
 
 ## 下一步优先级
 
-1. 用户使用真实 B480 Desktop 导入 New Horizon 最终 ZIP。
-2. 验证代表性单位、炮塔、工厂、地形、贴图、特效、音效。
-3. 保存地图、完全退出并重开，保留 `last_log.txt`。
-4. 用服务器加载实际地图/存档。
-5. 根据真实失败扩展纯运行时 Unit/Block mapper，减少源码依赖。
-6. 继续保证所有缺失、降级、剔除和失败项都有日志与报告。
+1. 用更少自定义 Java 行为的代表 Mod 建立实际兼容样本。
+2. 根据炮塔缺弹药等真实失败扩展纯运行时 Unit/Block mapper 和缺失项诊断。
+3. 用服务器加载实际地图/存档。
+4. 完成本地 Web 双模式、loopback、安全开关和安装分发包烟测。
+5. 继续保证所有缺失、降级、剔除和失败项都有日志与报告。
 
 ## 历史但仍有价值的材料
 
@@ -224,4 +236,4 @@ New Horizon E2E：
 - B480 atlas/import 修复：`docs/B480_CLIENT_IMPORT_FIX_20260730.md`；
 - B480 退出崩溃：`docs/B480_EXIT_UNLOAD_CRASH_20260730.md`；
 - 客户端上游补丁：`docs/patches/DataImagePacker-unload-fix.patch`；
-- Web UI：历史静态模式代码，停止主线维护。
+- Web UI 早期静态实现的 Git 历史仍可用于回归；当前规范见 `docs/WEB_UI.md`。

@@ -12,6 +12,7 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.time.Instant
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.Semaphore
@@ -20,7 +21,15 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.io.path.extension
 
+internal const val REQUEST_ID_HEADER = "X-Mod-DP-Bridge-Request-ID"
+
 class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
+    init {
+        require(!config.runtimeReady || config.address.address?.isLoopbackAddress == true) {
+            "Runtime conversion may only be enabled on a loopback HTTP binding."
+        }
+    }
+
     private val httpExecutor = Executors.newFixedThreadPool(
         config.maxSseClients + 8,
         namedThreadFactory("bridge-http", daemon = true),
@@ -87,6 +96,8 @@ class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
                 "activeJobs" to snapshots.count { !it.status.terminal }.toString(),
                 "maxConcurrentJobs" to config.maxConcurrentJobs.toString(),
                 "maxUploadBytes" to config.maxUploadBytes.toString(),
+                "runtimeReady" to config.runtimeReady.toString(),
+                "runtimeReason" to jsonString(config.runtimeReason),
             ),
         )
     }
@@ -104,34 +115,50 @@ class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
     }
 
     private fun createJob(exchange: HttpExchange) {
-        val reservation = jobs.reserveUpload()
+        val requestId = exchange.requestHeaders.getFirst(REQUEST_ID_HEADER)
+            ?: throw UploadException(400, "$REQUEST_ID_HEADER is required and must be a canonical UUID.")
+        val reservation = jobs.reserveUpload(requestId)
             ?: return sendError(exchange, 429, "queue_full", "The conversion queue is full; try again later.")
         var reservationOwned = true
+        var preparedJob: ConversionJob? = null
         try {
             val upload = MultipartUpload.receive(exchange, reservation.inputDirectory, config.maxUploadBytes)
-            // JobManager.submit consumes the reservation whether executor submission
-            // succeeds or is rejected; do not decrement it a second time here.
+            if (upload.mode == ConversionMode.RUNTIME && !config.runtimeReady) {
+                throw UploadException(
+                    503,
+                    "Runtime conversion is unavailable (${config.runtimeReason ?: "runtime_not_ready"}).",
+                )
+            }
+            // Move pending upload -> queued job atomically, but do not execute the
+            // uploaded input until the creation response has been written/flushed.
+            val job = jobs.prepare(reservation, upload)
             reservationOwned = false
-            val job = jobs.submit(reservation, upload)
+            preparedJob = job
             exchange.responseHeaders.set("Location", "/api/jobs/${job.id}")
             sendJson(exchange, 201, job.snapshot().toJson())
+            exchange.responseBody.flush()
+            preparedJob = null
+            jobs.start(job)
         } catch (error: Throwable) {
             if (reservationOwned) jobs.abandonUpload(reservation)
+            else preparedJob?.let(jobs::discardPrepared)
             throw error
         }
     }
 
     private fun handleJobRoute(exchange: HttpExchange, remainder: String) {
         val parts = remainder.split('/').filter(String::isNotBlank)
-        val id = parts.firstOrNull()?.takeIf(::validJobId)
-            ?: return sendError(exchange, 404, "job_not_found", "Conversion job not found.")
-        val job = jobs.get(id)
+        val id = parts.firstOrNull()?.let(::canonicalJobId)
             ?: return sendError(exchange, 404, "job_not_found", "Conversion job not found.")
         val action = parts.drop(1)
         when {
+            action.isEmpty() && exchange.requestMethod == "DELETE" -> return cancelJob(exchange, id)
+            action == listOf("cancel") && exchange.requestMethod == "POST" -> return cancelJob(exchange, id)
+        }
+        val job = jobs.get(id)
+            ?: return sendError(exchange, 404, "job_not_found", "Conversion job not found.")
+        when {
             action.isEmpty() && exchange.requestMethod == "GET" -> sendJson(exchange, 200, job.snapshot().toJson())
-            action.isEmpty() && exchange.requestMethod == "DELETE" -> cancelJob(exchange, job)
-            action == listOf("cancel") && exchange.requestMethod == "POST" -> cancelJob(exchange, job)
             action == listOf("events") && exchange.requestMethod == "GET" -> streamEvents(exchange, job)
             action == listOf("report") && exchange.requestMethod == "GET" -> sendReport(exchange, job)
             (action == listOf("download", "result") || action == listOf("result")) && exchange.requestMethod == "GET" -> {
@@ -146,9 +173,21 @@ class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
         }
     }
 
-    private fun cancelJob(exchange: HttpExchange, job: ConversionJob) {
-        val changed = jobs.cancel(job)
-        sendJson(exchange, if (changed) 202 else 200, job.snapshot().toJson())
+    private fun cancelJob(exchange: HttpExchange, requestId: String) {
+        val job = jobs.cancelRequest(requestId)
+        if (job != null) {
+            sendJson(exchange, 202, job.snapshot().toJson())
+            return
+        }
+        sendJson(
+            exchange,
+            202,
+            jsonObject(
+                "id" to jsonString(requestId),
+                "requestId" to jsonString(requestId),
+                "status" to jsonString("cancelled"),
+            ),
+        )
     }
 
     private fun streamEvents(exchange: HttpExchange, job: ConversionJob) {
@@ -209,7 +248,13 @@ class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
     private fun sendReport(exchange: HttpExchange, job: ConversionJob) {
         val report = job.findReport()
             ?: return sendError(exchange, 404, "report_not_ready", "The completed conversion report is not available.")
-        sendFile(exchange, report, "application/json; charset=utf-8", null)
+        val safeReport = job.safeJobFile(report)
+            ?: return sendError(exchange, 404, "report_not_ready", "The completed conversion report is not available.")
+        val bytes = job.redact(readUtf8NoFollow(safeReport)).toByteArray(StandardCharsets.UTF_8)
+        exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
+        exchange.responseHeaders.set("Cache-Control", "no-store")
+        exchange.sendResponseHeaders(200, bytes.size.toLong())
+        exchange.responseBody.write(bytes)
     }
 
     private fun sendResult(exchange: HttpExchange, job: ConversionJob) {
@@ -230,39 +275,85 @@ class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
         exchange.sendResponseHeaders(200, 0)
         ZipOutputStream(exchange.responseBody.buffered()).use { zip ->
             val entries = mutableSetOf<String>()
-            addZipFile(zip, job.webLog, "web-process.log", entries)
-            val converterLogs = job.outputDirectory.resolve("logs")
-            if (Files.isDirectory(converterLogs)) {
+            addZipFile(zip, job, job.webLog, "web-process.log", entries)
+            val converterLogs = job.safeJobDirectory(job.outputDirectory.resolve("logs"))
+            if (converterLogs != null) {
                 Files.walk(converterLogs).use { paths ->
                     paths.filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
                         .sorted()
                         .forEach { path ->
                             val relative = converterLogs.relativize(path).joinToString("/")
-                            addZipFile(zip, path, "converter/$relative", entries)
+                            addZipFile(zip, job, path, "output/logs/$relative", entries)
                         }
                 }
             }
-            listOf("report.json", "report.md", "failure-report.txt", "failure-diagnostics.json").forEach { name ->
-                addZipFile(zip, job.outputDirectory.resolve(name), name, entries)
+            if (!job.isCancelled()) {
+                listOf(
+                    "report.json",
+                    "report.md",
+                    "runtime-pipeline.json",
+                    "runtime-snapshot.json",
+                    "source-index-report.json",
+                    "runtime-mapping.json",
+                    "hybrid-report.json",
+                    "failure-report.txt",
+                    "failure-diagnostics.json",
+                ).forEach { name ->
+                    addZipFile(zip, job, job.outputDirectory.resolve(name), name, entries)
+                }
             }
         }
     }
 
-    private fun addZipFile(zip: ZipOutputStream, file: Path, entryName: String, entries: MutableSet<String>) {
-        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || !entries.add(entryName)) return
+    private fun addZipFile(
+        zip: ZipOutputStream,
+        job: ConversionJob,
+        file: Path,
+        entryName: String,
+        entries: MutableSet<String>,
+    ) {
+        val safeFile = job.safeJobFile(file) ?: return
+        if (!entries.add(entryName)) return
         val entry = ZipEntry(entryName).apply { time = 0L }
         zip.putNextEntry(entry)
-        Files.newInputStream(file, StandardOpenOption.READ).use { it.copyTo(zip) }
+        if (isRedactedTextEntry(entryName)) {
+            val redacted = job.redact(readUtf8NoFollow(safeFile))
+            zip.write(redacted.toByteArray(StandardCharsets.UTF_8))
+        } else {
+            Files.newInputStream(safeFile, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { it.copyTo(zip) }
+        }
         zip.closeEntry()
     }
+
+    private fun isRedactedTextEntry(entryName: String): Boolean = entryName.substringAfterLast('.', "").lowercase() in setOf(
+        "log",
+        "txt",
+        "json",
+        "md",
+        "tsv",
+        "csv",
+        "hjson",
+        "properties",
+        "java",
+        "yaml",
+        "yml",
+    )
 
     private fun sendFile(exchange: HttpExchange, file: Path, contentType: String, downloadName: String?) {
         exchange.responseHeaders.set("Content-Type", contentType)
         exchange.responseHeaders.set("Cache-Control", "no-store")
         downloadName?.let { exchange.responseHeaders.set("Content-Disposition", contentDisposition(it)) }
         exchange.sendResponseHeaders(200, Files.size(file))
-        Files.newInputStream(file).use { input -> exchange.responseBody.use(input::copyTo) }
+        Files.newInputStream(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { input ->
+            exchange.responseBody.use(input::copyTo)
+        }
     }
+
+    private fun readUtf8NoFollow(path: Path): String = Files.newInputStream(
+        path,
+        StandardOpenOption.READ,
+        LinkOption.NOFOLLOW_LINKS,
+    ).bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
 
     private fun handleStatic(exchange: HttpExchange) {
         if (exchange.requestMethod != "GET" && exchange.requestMethod != "HEAD") {
@@ -311,7 +402,10 @@ class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
         else -> "application/octet-stream"
     }
 
-    private fun validJobId(value: String): Boolean = value.length == 36 && value.all { it.isLetterOrDigit() || it == '-' }
+    private fun canonicalJobId(value: String): String? {
+        val parsed = runCatching { UUID.fromString(value) }.getOrNull() ?: return null
+        return parsed.toString().takeIf { it.equals(value, ignoreCase = true) }
+    }
 
     private fun requireMethod(exchange: HttpExchange, method: String): Unit? {
         if (exchange.requestMethod == method) return Unit
@@ -330,6 +424,7 @@ class BridgeWebServer(private val config: WebConfig) : AutoCloseable {
         exchange.responseHeaders.set("Cache-Control", "no-store")
         exchange.sendResponseHeaders(status, bytes.size.toLong())
         exchange.responseBody.write(bytes)
+        exchange.responseBody.flush()
     }
 
     private fun sendError(exchange: HttpExchange, status: Int, code: String, message: String) {

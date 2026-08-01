@@ -1,6 +1,6 @@
 # 测试与回归语料
 
-最后更新：2026-08-01（Asia/Shanghai）
+最后更新：2026-08-02（Asia/Shanghai）
 
 ## 测试原则
 
@@ -47,19 +47,46 @@ Web 模块测试：
 .\scripts\gradle.ps1 :bridge-web:test --no-build-cache --no-daemon
 ```
 
+Windows 快捷启动器的发布前静态检查（`-Help` 必须在自动构建前退出）：
+
+```powershell
+Get-Help .\scripts\start-web.ps1 -Detailed
+$tokens = $null
+$errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile(
+  (Resolve-Path .\scripts\start-web.ps1),
+  [ref]$tokens,
+  [ref]$errors
+) | Out-Null
+$errors
+.\scripts\start-web.ps1 -Help
+cmd /c start-web.bat -Help
+```
+
+构建 `:bridge-web:distZip` 后还应解压到临时目录，确认根目录包含 `start-web.bat`、
+`scripts/start-web.ps1`、`bin/`、`lib/`、README、CHANGELOG 和 Web 文档，并从该目录
+运行 `start-web.bat -Help`，确保分发布局不会尝试调用 Gradle。
+
 不要在本机直接以 `gradlew.bat test` 作为首选，因为 Gradle Test Worker 的 classpath argfile 在中文路径下曾发生编码损坏。
 
-当前测试数量：
+0.2.0 发布前最终全仓测试：
 
 | 模块 | 测试数 | 当前结果 |
 | --- | ---: | --- |
 | `bridge-model` | 5 | 通过 |
+| `bridge-source-index` | 3 | 通过 |
 | `bridge-target-api` | 1 | 通过 |
 | `bridge-target-1597` | 7 | 通过 |
-| `bridge-converter` | 18 | 通过 |
-| `bridge-java-static` | 22 | 通过 |
-| `bridge-web` | 6 | 通过 |
-| 合计 | 59 | 通过 |
+| `bridge-converter` | 20 | 通过 |
+| `bridge-java-static` | 32 | 通过 |
+| `bridge-runtime-extractor` | 12 | 通过 |
+| `bridge-runtime-assets` | 9 | 通过 |
+| `bridge-runtime-mapper` | 4 | 通过 |
+| `bridge-cli` | 25 | 通过 |
+| `bridge-web` | 13 | 通过 |
+| **合计** | **131** | **通过** |
+
+最终命令为 `clean build :bridge-cli:distZip :bridge-web:distZip --no-build-cache --no-daemon`，131 项均为 0 failed / 0 errors / 0 skipped。不能再沿用历史 59 项或修改前 124 项统计。
 
 当前覆盖：
 
@@ -80,7 +107,7 @@ Web 模块测试：
 - 自定义 Block/Bullet/Effect 降级、v159.7 不接受字段移除和逐项诊断；
 - 固定目标 v159.7 原版对象快照（当前为 tsunami-slag Bullet）与不执行输入代码的约束。
 - 音频文件头检测、逐文件 `AUDIO_CONTAINER_EXTENSION_MISMATCH` warning，以及保持原名/字节、不自动转码。
-- Web 健康检查、静态页面、未允许 Host 与跨站状态修改拒绝；真实 multipart 上传后启动隔离 CLI，并读取结果 ZIP、报告和日志归档；准备目录/日志失败必须进入终态，上传预约创建失败会回滚容量；运行中的结果产物不可提前下载；取消运行中任务会终止 CLI 及子进程，取消后仅提供已完成的日志归档；并发 SSE 事件序号保持严格单调。
+- Web 健康检查、静态页面、未允许 Host 与跨站状态修改拒绝；静态单文件和运行时 JAR + 可选源码双文件 multipart；运行时全局/作业双重同意和 fail-closed；隔离 CLI、结果/报告/审计日志下载；准备失败终态、容量回滚、运行中产物隐藏、进程树取消及 SSE 严格单调。
 
 ## CLI 基本命令
 
@@ -370,22 +397,30 @@ Headless apply 通过只证明 B480 parser/DataPatcher 已接受并注册数据�
 
 ## Web UI / HTTP API 验收
 
-Web 验收的目标是证明“同一 CLI 能被安全、可观察地编排”，而不是重新判断转换语义。至少覆盖以下四组测试。
+Web 验收的目标是证明“同一 CLI 能按明确的信任边界被本地、可观察地编排”，而不是重新判断转换语义。运行时 Web 模式会执行发布 JAR；这里的“安全”只指 fail-closed、固定参数、路径和资源控制，不代表恶意代码沙箱。至少覆盖以下四组测试。
 
 ### 1. 自动化接口测试
 
 现有 `bridge-web` 集成测试使用临时工作目录、随机回环端口和仓库内自建小语料，并真正启动隔离 CLI；不依赖 Desktop、外部 Mod 或公网。后续队列/取消等专项测试可使用可控的假进程入口。完整最低断言：
 
-- `GET /api/health` 返回成功且 Content-Type 正确；
-- 默认回环 Host 可访问；未列入白名单的 Host 返回 `421 host_not_allowed`，监听通配地址不会隐式放行任意 Host；
-- `POST /api/jobs` 接受规范 multipart 字段 `file`（兼容别名 `mod`），返回 `201` 和 UUID；
-- 缺少文件、空文件、非法 multipart 和超上限被拒绝；路径型、控制字符或超长文件名被净化为安全叶文件名；
+- `GET /api/health` 返回成功、Content-Type 正确，并提供 `runtimeReady` 与不泄漏本机路径的 `runtimeReason`；
+- 默认回环 Host 可访问；未允许 Host 返回 `421 host_not_allowed`；运行时能力启用时非 loopback 配置必须 fail-closed；
+- 静态作业接受 `mode=static` 和单个 `file`；运行时作业接受 `mode=runtime`、必需 `modJar`、可选 `source` 及 `allowModExecution=true`；
+- 每次创建作业必须携带合法且未使用过的 `X-Mod-DP-Bridge-Request-ID` UUID；缺失/非法值返回 400，重复值被拒绝，上传响应丢失时只能按该 UUID 精确恢复/取消，不能按同名文件或时间窗口猜测；
+- 缺少 mode/文件、重复或未知文件字段、空文件、非法 multipart、单文件或总请求超限被拒绝；半途失败会清理全部临时上传；
+- 运行时未全局启用、固定 Server JAR 未配置/无效、未作业确认、缺少 JAR 时均拒绝，且不得退回静态模式；
+- 浏览器不能上传/指定 Server JAR，也不能传入任意 CLI 参数；命令必须以参数列表构造，不经 shell；
+- 路径型、控制字符或超长文件名被净化为安全叶文件名，JAR 和源码保存在同一 UUID 隔离目录；
 - 同一任务依次出现合法状态，不允许终态回到 `running`；
 - 并发上限为 1 时第二个任务保持 `queued`，首个完成后才启动；
-- 取消 queued 任务不会启动 CLI；取消 running 任务会结束进程及其后代并进入 `cancelled`；
+- 取消 queued 任务不会启动 CLI；取消 running 任务会尽力结束 CLI、extractor、Mindustry worker 和验证进程后代并进入 `cancelled`；
+- multipart 已完整接收但 `201 Created` 未能成功写回时不得提交执行器；上传阶段点击取消必须先按请求 UUID 登记 tombstone 再 abort XHR，即使 job 尚未创建也不得启动 CLI；
+- 创建请求发生网络错误时，无论用户是否请求取消，都必须先按 request ID 精确查询恢复；正常任务继续连接，已请求取消的任务再次确认取消；
 - stdout/stderr 被合并、按序落盘，并可通过 SSE 收到；
 - SSE 至少包含初始 snapshot 和终态，客户端断开不会取消任务；
-- 成功任务的 `/download/result`、`/download/logs`、`/report` 返回正确内容和安全文件名；
+- 成功任务的 `/download/result`、`/download/logs`、`/report` 返回正确内容和安全文件名；运行时日志归档包含存在的 pipeline/snapshot/mapping/source-index/hybrid 报告；
+- 只有退出码为 0 且报告声明的唯一 DP ZIP 通过目录边界、无符号链接、大小、SHA-256 和 ZIP 可读性校验时才可进入 `succeeded`；
+- `cancelled` 任务不开放结果、标准报告或残留 runtime JSON，日志包只保留 Web/CLI 已完成日志；
 - 作业仍在 `queued` / `running` 时，即使工作目录中已出现 ZIP，也不允许提前下载为最终结果；
 - 准备作业目录或创建日志失败时，任务必须进入 `failed` 终态，不得永久停留在 `running`；
 - 未生成对应产物时下载端点返回明确的非成功状态，而不是空的 200 文件；
@@ -401,6 +436,15 @@ Web 验收的目标是证明“同一 CLI 能被安全、可观察地编排”�
 & ".\bridge-web\build\install\mod-dp-bridge-web\bin\mod-dp-bridge-web.bat"
 ```
 
+上面只启用静态模式。可信运行时 smoke test 需先由操作员设置固定官方 JAR 和执行开关：
+
+```powershell
+$env:MOD_DP_BRIDGE_SERVER_JAR = "C:\path\to\official-v159.7-server-release.jar"
+$env:MOD_DP_BRIDGE_ENABLE_RUNTIME = "true"
+$env:MOD_DP_BRIDGE_HYBRID_MAX_ROUNDS = "8"
+& ".\bridge-web\build\install\mod-dp-bridge-web\bin\mod-dp-bridge-web.bat"
+```
+
 在终端 B 执行健康检查：
 
 ```powershell
@@ -413,7 +457,8 @@ Invoke-RestMethod http://127.0.0.1:8080/api/health
 $response = Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:8080/api/jobs `
-  -Form @{ file = Get-Item ".\path\to\fixture.zip" }
+  -Headers @{ "X-Mod-DP-Bridge-Request-ID" = [guid]::NewGuid().ToString() } `
+  -Form @{ mode = "static"; file = Get-Item ".\path\to\fixture.zip" }
 
 $id = $response.id
 do {
@@ -421,6 +466,22 @@ do {
   $job = Invoke-RestMethod "http://127.0.0.1:8080/api/jobs/$id"
   $job.status
 } while ($job.status -in @("queued", "running"))
+```
+
+运行时作业示例只可使用明确可信且能在官方 v159.7 加载的 JAR：
+
+```powershell
+$runtime = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8080/api/jobs `
+  -Headers @{ "X-Mod-DP-Bridge-Request-ID" = [guid]::NewGuid().ToString() } `
+  -Form @{
+    mode = "runtime"
+    modJar = Get-Item ".\path\to\trusted-mod.jar"
+    source = Get-Item ".\path\to\matching-source.zip"
+    allowModExecution = "true"
+  }
+$runtimeId = $runtime.id
 ```
 
 成功后检查：
@@ -439,16 +500,18 @@ Invoke-WebRequest "http://127.0.0.1:8080/api/jobs/$id/report" -OutFile ".\web-re
 
 在 Chromium/Firefox 至少各完成一次：
 
-1. 点击选择文件和拖拽上传都能正确显示文件名与大小；
-2. 未选择文件时不能开始，上传期间不会重复提交；
-3. 运行后状态、进度和终端日志持续更新，长行、中文、ANSI/控制字符不会破坏页面；
-4. 日志区域可滚动，自动跟随不会阻止用户向上阅读历史；
-5. 终止按钮只在可取消状态启用，确认后任务最终变为 `cancelled`；
-6. 转换成功后 DP、全部日志和原始报告下载可用；
-7. 转换完成、降级、排除、不支持和失败项数字与 `report.json` 一致；
-8. 详细分组默认折叠，展开后原因和诊断码可读；
-9. CLI 失败、浏览器 SSE 断线、报告缺失和下载失败都有明确提示；
-10. 刷新页面不会终止服务端正在运行的 CLI；重新连接后至少能查询最终状态和下载持久日志。
+1. 静态/可信运行时模式切换清晰，不因 `.jar` 扩展名自动启用执行；
+2. 静态/运行时主输入支持点击和拖拽，可选源码 ZIP 的独立选择器正确显示文件名与大小；
+3. 运行时未就绪或未勾选“信任并执行”时不能开始，上传期间不会重复提交；
+4. 页面显著说明 JAR 会以本机服务用户权限执行，源码不执行，Web 只允许 loopback；
+5. 运行后状态、运行时阶段进度和终端日志持续更新，长行、中文、ANSI/控制字符不会破坏页面；
+6. 日志区域可滚动，自动跟随不会阻止用户向上阅读历史；
+7. 终止按钮只在可取消状态启用，确认后任务最终变为 `cancelled`；
+8. 转换成功后 DP、全部日志和原始报告下载可用；
+9. 转换完成、降级、排除、不支持和失败项数字与 `report.json` 一致；
+10. 详细分组默认折叠，展开后原因和诊断码可读；
+11. CLI 失败、浏览器 SSE 断线、报告缺失和下载失败都有明确提示；
+12. 刷新页面不会终止服务端正在运行的 CLI；重新连接后至少能查询最终状态和下载持久日志。
 
 同时检查小屏幕下的基本可用性、键盘焦点、按钮禁用状态和文本对比度。Mindustry 风格不能以牺牲错误可读性或可访问性为代价。
 
@@ -458,12 +521,13 @@ Invoke-WebRequest "http://127.0.0.1:8080/api/jobs/$id/report" -OutFile ".\web-re
 - 上传文件名包含 `..`、绝对路径、Windows 盘符、控制字符、同形 Unicode 和超长名称；
 - 上传 ZIP Slip、过多 entry、高压缩比和展开超限语料，确认 Web 与 CLI 两层均拒绝；
 - 同时提交超过并发上限的任务，确认不会无限创建运行进程；
-- 运行任务中触发取消，确认 Java/验证子进程没有遗留；
+- 运行任务中触发取消，确认 CLI、extractor、Mindustry worker 和验证子进程没有项目遗留；
 - 将工作目录权限设为不可写、磁盘空间不足或 CLI classpath 错误，确认任务失败且日志不泄漏敏感环境变量；
 - 到期清理前后检查任务、上传、日志、报告和产物的生命周期一致；
-- 从另一台主机确认默认 `127.0.0.1` 不可访问；远程部署时验证反向代理认证、HTTPS、上传限制、SSE 不缓冲和超时。
+- 从另一台主机确认默认 `127.0.0.1` 不可访问；配置非 loopback 后 `runtimeReady` 必须为 false，运行时作业必须被拒绝；
+- 验证取消只是 best effort：文档不得将它描述为恶意代码隔离或事务回滚。
 
-公开部署前还必须人工审阅日志中的本机路径、输入名称和第三方资产许可证。完整安全部署建议见 `WEB_UI.md`。
+本版本不接受公开或远程部署。分享日志/产物前仍须人工审阅其中的本机路径、输入名称、隐私和第三方资产许可证。完整边界见 `WEB_UI.md`。
 
 ## 已完成的 Desktop 实测
 
@@ -521,6 +585,21 @@ Invoke-WebRequest "http://127.0.0.1:8080/api/jobs/$id/report" -OutFile ".\web-re
 - 每一个普通/generated sprite 和 heat/outline/preview region；
 - 未被用户实际触发的嵌套 Effect/Draw/Consume 等路径；
 - 保存地图后完全退出/重开和多人服务器目标地图加载。
+
+### New Horizon 2.2.1 运行时转换
+
+自动 `runtime-convert --source` 结果为 143 个 Content、1635 个外部资产，最终
+DataPatcher 为 0 failed / 0 warning。用户的真实客户端结果：
+
+- DP 能够加载；
+- 客户端出现了新内容；
+- 炮塔缺少弹药；
+- 退出地图时客户端崩溃；
+- 服务器地图/存档加载未测试。
+
+该结果必须记录为“导入/注册链路可用，但功能验收失败或显著降级”，不能标记为
+完整兼容。New Horizon 大量使用自定义 Java 内容与行为，不适合作为项目总体兼容率样本；
+它是“Headless 和导入成功不等于玩法等价”的负面边界证据。
 
 ## v159.7 Desktop 人工测试步骤
 

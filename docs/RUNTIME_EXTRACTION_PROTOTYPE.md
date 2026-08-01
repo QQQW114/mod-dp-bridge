@@ -1,6 +1,7 @@
 # Local runtime content extraction prototype
 
-Status: experimental, local-only, and deliberately separate from `bridge-converter`.
+Status: historical prototype record. The current integrated implementation is documented in
+`DYNAMIC_RUNTIME_EXTRACTION.md` and `CLI_RUNTIME_INTEGRATION.md`.
 
 ## Why this exists
 
@@ -30,7 +31,9 @@ or use the network. Therefore:
 
 - this prototype requires the explicit `--allow-mod-execution` flag;
 - use only locally and only with Mod files you trust;
-- do not connect it to the removed Web upload path;
+- only expose it through the 0.2.0 local Web UI when runtime execution is explicitly enabled,
+  the service is bound to loopback, and each trusted job acknowledges execution;
+- never expose it as a remote upload, public or multi-user service;
 - for untrusted inputs, use a disposable VM/container and deny network and host filesystem access.
 
 The launcher creates an isolated Mindustry data directory and copies only the target Mod into its

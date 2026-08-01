@@ -775,7 +775,7 @@ public final class RuntimeExtractorMain {
             writeJarEntry(jar, "mod.hjson", """
                 name: dpbridge-runtime-trace-probe
                 main: bridgeprobe.RuntimeTraceProbe
-                version: 0.1.0
+                version: 0.2.0
                 minGameVersion: 159.7
                 hidden: true
                 java: true

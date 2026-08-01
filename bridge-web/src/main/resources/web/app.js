@@ -6,28 +6,51 @@
     const MAX_TERMINAL_LINES = 6000;
     const REPORT_BATCH_SIZE = 120;
     const TERMINAL_STATES = new Set(["succeeded", "failed", "cancelled"]);
+    const cancellationRetries = new Set();
 
     const $ = (selector, root = document) => root.querySelector(selector);
     const elements = {
         serviceState: $("#service-state"),
         serviceStateText: $("#service-state-text"),
+        modeRuntime: $("#mode-runtime"),
+        modeStatic: $("#mode-static"),
+        runtimeModeCard: $("#runtime-mode-card"),
+        staticModeCard: $("#static-mode-card"),
+        runtimeReadyBadge: $("#runtime-ready-badge"),
+        runtimeReadyReason: $("#runtime-ready-reason"),
         fileInput: $("#mod-file"),
         fileHelp: $("#file-help"),
         dropZone: $("#drop-zone"),
+        dropTitle: $("#drop-title"),
+        dropSubtitle: $("#drop-subtitle"),
         selectedFile: $("#selected-file"),
         fileGlyph: $("#file-glyph"),
         selectedFileName: $("#selected-file-name"),
         selectedFileMeta: $("#selected-file-meta"),
         removeFile: $("#remove-file"),
+        runtimeOptions: $("#runtime-options"),
+        sourceInput: $("#source-file"),
+        selectSource: $("#select-source"),
+        selectedSource: $("#selected-source"),
+        selectedSourceName: $("#selected-source-name"),
+        selectedSourceMeta: $("#selected-source-meta"),
+        removeSource: $("#remove-source"),
+        allowModExecution: $("#allow-mod-execution"),
+        runtimeTrustBox: $("#runtime-trust-box"),
+        staticScopeNote: $("#static-scope-note"),
+        runtimeScopeNote: $("#runtime-scope-note"),
         uploadError: $("#upload-error"),
         startButton: $("#start-button"),
+        startButtonLabel: $("#start-button-label"),
         cancelButton: $("#cancel-button"),
+        jobMode: $("#job-mode"),
         jobStatus: $("#job-status"),
         phaseLabel: $("#phase-label"),
         progressValue: $("#progress-value"),
         progressTrack: $("#progress-track"),
         progressBar: $("#progress-bar"),
         jobId: $("#job-id"),
+        jobInput: $("#job-input"),
         elapsedTime: $("#elapsed-time"),
         terminalOutput: $("#terminal-output"),
         autoScroll: $("#auto-scroll"),
@@ -52,11 +75,16 @@
     };
 
     const state = {
+        mode: "static",
         file: null,
+        sourceFile: null,
         job: null,
         jobId: null,
         eventSource: null,
         uploadRequest: null,
+        cancelAfterCreate: false,
+        uploadRequestId: null,
+        uploadCancellationConfirmed: false,
         elapsedTimer: null,
         startedAt: null,
         terminalLines: 0,
@@ -67,6 +95,9 @@
         diagnosticMap: new Map(),
         servicePoll: null,
         maxUploadBytes: null,
+        serviceOnline: false,
+        runtimeReady: false,
+        runtimeReason: "正在检查官方 v159.7 运行环境…",
         jobGeneration: 0,
     };
 
@@ -87,17 +118,42 @@
         failed: ["报告失败", "status-failed"],
     };
 
+    const runtimeReasonPresentation = {
+        runtime_execution_disabled: "服务端未启用运行时 Mod 执行",
+        runtime_requires_loopback_binding: "运行时模式仅允许绑定本机回环地址",
+        runtime_server_jar_unavailable: "未配置可用的官方 v159.7 Server JAR",
+        runtime_server_jar_unreadable: "官方 v159.7 Server JAR 无法读取",
+        runtime_server_jar_sha256_mismatch: "Server JAR 不是固定哈希的官方 v159.7 版本",
+    };
+
     const phasePresentation = {
         queued: "等待可用转换队列",
         starting: "正在启动转换器",
         reading: "正在读取上传的 Mod",
         scanning: "正在扫描并验证文件",
         detecting: "正在识别输入格式",
+        preflight: "正在检查信任边界与官方 v159.7 环境",
+        "runtime-preflight": "正在检查信任边界与官方 v159.7 环境",
+        runtimeExtraction: "正在独立 JVM 中加载 Mod 并提取注册内容",
+        "runtime-extraction": "正在独立 JVM 中加载 Mod 并提取注册内容",
+        sourceIndex: "正在校验 JAR 与可选源码的对应关系",
+        "source-index": "正在校验 JAR 与可选源码的对应关系",
+        runtimeToDpMapping: "正在将运行时 Content 映射为 v159.7 DP 声明",
+        "runtime-mapping": "正在将运行时 Content 映射为 v159.7 DP 声明",
+        hybridSourceSelection: "正在用 DataPatcher 筛选源码候选内容",
+        "hybrid-selection": "正在用 DataPatcher 筛选源码候选内容",
+        packaging: "正在打包运行时转换产物",
         exporting: "正在静态提取内容声明",
         planning: "正在规划内容和资源",
         "writing-assets": "正在写入服务器数据资源",
         "writing-zip": "正在生成 Data Pack ZIP",
         validating: "正在执行转换验证",
+        serverDiscovery: "正在启动官方服务器扫描 DP 资源",
+        "server-discovery": "正在启动官方服务器扫描 DP 资源",
+        dataPatchApply: "正在执行官方 DataPatcher.apply 最终验证",
+        "data-patch-apply": "正在执行官方 DataPatcher.apply 最终验证",
+        dpValidation: "正在执行官方 v159.7 DP 最终验证",
+        "dp-validation": "正在执行官方 v159.7 DP 最终验证",
         finalizing: "正在生成报告与诊断",
         cancelling: "正在终止转换进程",
         cancelled: "转换已终止",
@@ -123,6 +179,28 @@
     function safeJson(value) {
         if (typeof value !== "string") return value ?? {};
         try { return JSON.parse(value); } catch { return { message: value }; }
+    }
+
+    function presentRuntimeReason(value, ready) {
+        const reason = String(value ?? "").trim();
+        if (!reason) {
+            return ready
+                ? "官方 v159.7 / B480 运行时转换环境已就绪。"
+                : "服务器未启用可执行 Mod JAR 的运行时转换。";
+        }
+        const localized = runtimeReasonPresentation[reason];
+        return localized ? `${localized}（${reason}）` : reason;
+    }
+
+    function createRequestId() {
+        if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+        const bytes = new Uint8Array(16);
+        if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+        else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     }
 
     function clampProgress(value) {
@@ -226,6 +304,76 @@
         return true;
     }
 
+    function fileExtension(file) {
+        const name = String(file?.name || "");
+        return name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+    }
+
+    function selectedUploadBytes(file = state.file, sourceFile = state.sourceFile) {
+        return Number(file?.size || 0) + Number(sourceFile?.size || 0);
+    }
+
+    function activeJobExists() {
+        return Boolean(state.uploadRequest) || Boolean(
+            state.job && !TERMINAL_STATES.has(String(state.job.status).toLowerCase()),
+        );
+    }
+
+    function clearSelectedFiles() {
+        state.file = null;
+        state.sourceFile = null;
+        elements.fileInput.value = "";
+        elements.sourceInput.value = "";
+        elements.selectedFile.hidden = true;
+        elements.selectedSource.hidden = true;
+        elements.dropZone.style.removeProperty("min-height");
+        elements.allowModExecution.checked = false;
+    }
+
+    function updateFileHelp() {
+        const limit = state.maxUploadBytes ? ` · 总上限 ${formatBytes(state.maxUploadBytes)}` : "";
+        if (state.mode === "runtime") {
+            elements.fileInput.accept = ".jar,application/java-archive,application/zip";
+            elements.dropTitle.textContent = "拖拽可信发布 JAR 到这里";
+            elements.dropSubtitle.textContent = "或点击选择已编译的 Mod JAR";
+            elements.fileHelp.textContent = `.jar 必选${limit} · 源码 ZIP 在下方可选`;
+            elements.startButtonLabel.textContent = "开始运行时转换";
+        } else {
+            elements.fileInput.accept = ".zip,.jar,.hjson,.json,.json5,application/zip,application/java-archive,application/json";
+            elements.dropTitle.textContent = "拖拽静态输入到这里";
+            elements.dropSubtitle.textContent = "或点击选择 Mod / CP / DP";
+            elements.fileHelp.textContent = `.zip / .jar / .hjson / .json / .json5${limit} · 目录请先压缩`;
+            elements.startButtonLabel.textContent = "开始静态转换";
+        }
+    }
+
+    function syncModeUi() {
+        const runtime = state.mode === "runtime";
+        elements.modeRuntime.checked = runtime;
+        elements.modeStatic.checked = !runtime;
+        elements.runtimeModeCard.classList.toggle("is-active", runtime);
+        elements.staticModeCard.classList.toggle("is-active", !runtime);
+        elements.runtimeOptions.hidden = !runtime;
+        elements.runtimeScopeNote.hidden = !runtime;
+        elements.staticScopeNote.hidden = runtime;
+        updateFileHelp();
+        updateActionState();
+    }
+
+    function selectMode(mode) {
+        if (!['runtime', 'static'].includes(mode) || mode === state.mode || activeJobExists()) return;
+        if (mode === "runtime" && !state.runtimeReady) {
+            showUploadError(state.runtimeReason || "运行时转换当前不可用。");
+            return;
+        }
+        const hadSelection = Boolean(state.file || state.sourceFile || elements.allowModExecution.checked);
+        state.mode = mode;
+        clearSelectedFiles();
+        showUploadError("");
+        syncModeUi();
+        if (hadSelection) showToast("已切换转换模式，请重新选择对应输入。", "info");
+    }
+
     function setDropZoneLocked(locked) {
         elements.fileInput.disabled = locked;
         elements.removeFile.disabled = locked;
@@ -234,11 +382,28 @@
     }
 
     function updateActionState() {
-        const active = Boolean(state.uploadRequest) || (state.job && !TERMINAL_STATES.has(String(state.job.status).toLowerCase()));
-        const cancelling = Boolean(state.job && String(state.job.phase || "").toLowerCase() === "cancelling");
-        elements.startButton.disabled = active || !state.file;
+        const active = activeJobExists();
+        const cancelling = state.cancelAfterCreate
+            || Boolean(state.job && String(state.job.phase || "").toLowerCase() === "cancelling");
+        const runtime = state.mode === "runtime";
+        const runtimeReady = !runtime || state.runtimeReady;
+        const trusted = !runtime || elements.allowModExecution.checked;
+        const correctPrimaryType = Boolean(state.file) && (!runtime || fileExtension(state.file) === "jar");
+        const withinLimit = !state.maxUploadBytes || selectedUploadBytes() <= state.maxUploadBytes;
+        elements.startButton.disabled = active || !state.serviceOnline || !runtimeReady || !trusted || !correctPrimaryType || !withinLimit;
         elements.cancelButton.disabled = !active || cancelling;
-        setDropZoneLocked(active);
+        setDropZoneLocked(active || (runtime && !state.runtimeReady));
+        elements.sourceInput.disabled = active || !runtime || !state.runtimeReady;
+        elements.selectSource.disabled = elements.sourceInput.disabled;
+        elements.removeSource.disabled = elements.sourceInput.disabled;
+        elements.allowModExecution.disabled = active || !runtime || !state.runtimeReady;
+        elements.runtimeTrustBox.classList.toggle("is-disabled", elements.allowModExecution.disabled);
+        elements.runtimeTrustBox.classList.toggle("is-confirmed", elements.allowModExecution.checked);
+        elements.modeStatic.disabled = active;
+        elements.modeRuntime.disabled = active || !state.runtimeReady;
+        elements.runtimeModeCard.classList.toggle("is-locked", active);
+        elements.staticModeCard.classList.toggle("is-locked", active);
+        elements.runtimeModeCard.classList.toggle("is-unavailable", !state.runtimeReady);
     }
 
     function enableDownload(anchor, enabled, href) {
@@ -256,33 +421,53 @@
             return;
         }
         const root = `${API}/${encodeURIComponent(state.jobId)}/download`;
-        const terminal = TERMINAL_STATES.has(String(job.status || "").toLowerCase());
-        enableDownload(elements.downloadResult, Boolean(job.resultAvailable), `${root}/result`);
+        const status = String(job.status || "").toLowerCase();
+        const terminal = TERMINAL_STATES.has(status);
+        enableDownload(elements.downloadResult, status !== "cancelled" && Boolean(job.resultAvailable), `${root}/result`);
         enableDownload(elements.downloadLogs, terminal && Boolean(job.logsAvailable), `${root}/logs`);
     }
 
-    function selectFile(file) {
-        if (!file || elements.fileInput.disabled) return;
-        const allowed = ["zip", "jar", "hjson", "json", "json5"];
-        const extension = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
+    function selectFile(file, target = "primary") {
+        if (!file) return;
+        const source = target === "source";
+        if ((source && elements.sourceInput.disabled) || (!source && elements.fileInput.disabled)) return;
+        const allowed = source ? ["zip"] : state.mode === "runtime" ? ["jar"] : ["zip", "jar", "hjson", "json", "json5"];
+        const extension = fileExtension(file);
         if (!allowed.includes(extension)) {
-            showUploadError("不支持该文件类型。请选择 .zip、.jar、.hjson、.json 或 .json5 文件。");
+            const expected = source
+                ? "可选源码必须是 .zip 文件。"
+                : state.mode === "runtime"
+                    ? "运行时转换必须选择已编译的 .jar 发布文件。"
+                    : "不支持该文件类型。请选择 .zip、.jar、.hjson、.json 或 .json5 文件。";
+            showUploadError(expected);
             return;
         }
         if (file.size === 0) {
             showUploadError("所选文件为空，无法转换。");
             return;
         }
-        if (state.maxUploadBytes && file.size > state.maxUploadBytes) {
-            showUploadError(`所选文件为 ${formatBytes(file.size)}，超过服务器上限 ${formatBytes(state.maxUploadBytes)}。`);
+        const prospectiveBytes = source
+            ? selectedUploadBytes(state.file, file)
+            : selectedUploadBytes(file, state.sourceFile);
+        if (state.maxUploadBytes && prospectiveBytes > state.maxUploadBytes) {
+            showUploadError(`所选输入合计 ${formatBytes(prospectiveBytes)}，超过服务器上传上限 ${formatBytes(state.maxUploadBytes)}。`);
             return;
         }
-        state.file = file;
-        elements.selectedFileName.textContent = file.name;
-        elements.selectedFileMeta.textContent = `${formatBytes(file.size)} · ${extension.toUpperCase()}`;
-        elements.fileGlyph.textContent = extension.toUpperCase().slice(0, 5);
-        elements.selectedFile.hidden = false;
-        elements.dropZone.style.minHeight = "185px";
+        if (source) {
+            state.sourceFile = file;
+            elements.selectedSourceName.textContent = file.name;
+            elements.selectedSourceMeta.textContent = `${formatBytes(file.size)} · SOURCE ZIP · 不执行`;
+            elements.selectedSource.hidden = false;
+        } else {
+            state.file = file;
+            if (state.mode === "runtime") elements.allowModExecution.checked = false;
+            elements.selectedFileName.textContent = file.name;
+            const role = state.mode === "runtime" ? "发布 JAR · 将执行" : "静态输入 · 不执行";
+            elements.selectedFileMeta.textContent = `${formatBytes(file.size)} · ${extension.toUpperCase()} · ${role}`;
+            elements.fileGlyph.textContent = extension.toUpperCase().slice(0, 5);
+            elements.selectedFile.hidden = false;
+            elements.dropZone.style.minHeight = "155px";
+        }
         showUploadError("");
         updateActionState();
     }
@@ -293,6 +478,16 @@
         elements.fileInput.value = "";
         elements.selectedFile.hidden = true;
         elements.dropZone.style.removeProperty("min-height");
+        if (state.mode === "runtime") elements.allowModExecution.checked = false;
+        showUploadError("");
+        updateActionState();
+    }
+
+    function removeSelectedSource() {
+        if (elements.sourceInput.disabled) return;
+        state.sourceFile = null;
+        elements.sourceInput.value = "";
+        elements.selectedSource.hidden = true;
         showUploadError("");
         updateActionState();
     }
@@ -362,20 +557,42 @@
         }
     }
 
+    function updateJobMode(job) {
+        const mode = String(job?.mode || job?.conversionMode || job?.requestMode || "").toLowerCase();
+        if (mode !== "runtime" && mode !== "static") {
+            elements.jobMode.hidden = true;
+            elements.jobMode.className = "job-mode";
+            return;
+        }
+        elements.jobMode.hidden = false;
+        elements.jobMode.className = `job-mode mode-${mode}`;
+        elements.jobMode.textContent = mode === "runtime" ? "RUNTIME / TRUSTED" : "STATIC / NO EXEC";
+    }
+
     function applyJob(job, source = "status") {
         if (!job || typeof job !== "object") return;
         state.job = { ...(state.job || {}), ...job };
         const current = state.job;
         const status = String(current.status || "queued").toLowerCase();
+        const restoredMode = String(current.mode || current.conversionMode || current.requestMode || "").toLowerCase();
+        if (source === "restore" && (restoredMode === "runtime" || restoredMode === "static") && restoredMode !== state.mode) {
+            state.mode = restoredMode;
+            clearSelectedFiles();
+            syncModeUi();
+        }
         state.jobId = current.id || state.jobId;
         if (state.jobId) {
             elements.jobId.textContent = state.jobId;
             elements.jobId.title = state.jobId;
             saveJobId(state.jobId);
         }
+        const inputNames = [current.fileName, current.sourceFileName].filter(Boolean);
+        elements.jobInput.textContent = inputNames.length ? inputNames.join(" + ") : "—";
+        elements.jobInput.title = inputNames.join(" + ");
 
         setStatus(status, current.message && status === "failed" ? "转换失败" : undefined);
         setProgress(current.progress, current.phase || statusPresentation[status]?.[0], status === "queued" || status === "running");
+        updateJobMode(current);
         updateDownloads(current);
         updateActionState();
 
@@ -395,11 +612,20 @@
         state.jobId = null;
         state.finishingJobId = null;
         state.report = null;
+        state.cancelAfterCreate = false;
+        state.uploadRequestId = createRequestId();
+        state.uploadCancellationConfirmed = false;
         state.diagnosticMap.clear();
         saveJobId(null);
         stopElapsedTimer();
         elements.elapsedTime.textContent = "00:00";
         elements.jobId.textContent = "—";
+        const selectedInputs = [state.file?.name, state.sourceFile?.name].filter(Boolean);
+        elements.jobInput.textContent = selectedInputs.length ? selectedInputs.join(" + ") : "—";
+        elements.jobInput.title = selectedInputs.join(" + ");
+        elements.jobMode.hidden = false;
+        elements.jobMode.className = `job-mode mode-${state.mode}`;
+        elements.jobMode.textContent = state.mode === "runtime" ? "RUNTIME / TRUSTED" : "STATIC / NO EXEC";
         elements.reportDetails.open = false;
         elements.reportLoading.hidden = false;
         elements.reportLoading.querySelector("p").textContent = "报告将在转换结束后载入。";
@@ -424,22 +650,36 @@
     }
 
     function startConversion() {
-        if (!state.file || state.uploadRequest) return;
+        if (!state.file || state.uploadRequest || elements.startButton.disabled) return;
+        const submittedMode = state.mode;
+        if (submittedMode === "runtime" && (!state.runtimeReady || !elements.allowModExecution.checked || fileExtension(state.file) !== "jar")) {
+            showUploadError("运行时转换需要可用环境、发布 JAR 与显式信任确认。");
+            updateActionState();
+            return;
+        }
         const generation = prepareNewRun();
         showUploadError("");
 
         const form = new FormData();
-        form.append("file", state.file, state.file.name);
+        form.append("mode", submittedMode);
+        if (submittedMode === "runtime") {
+            form.append("modJar", state.file, state.file.name);
+            if (state.sourceFile) form.append("source", state.sourceFile, state.sourceFile.name);
+            form.append("allowModExecution", "true");
+        } else {
+            form.append("file", state.file, state.file.name);
+        }
         const request = new XMLHttpRequest();
         state.uploadRequest = request;
         updateActionState();
         request.open("POST", API);
+        request.setRequestHeader("X-Mod-DP-Bridge-Request-ID", state.uploadRequestId);
         request.responseType = "json";
 
         request.upload.addEventListener("progress", (event) => {
             if (!isCurrentGeneration(generation) || state.uploadRequest !== request) return;
             if (!event.lengthComputable) {
-                setProgress(0, "正在上传 Mod…", true);
+                setProgress(0, submittedMode === "runtime" ? "正在上传发布 JAR 与可选源码…" : "正在上传静态输入…", true);
                 return;
             }
             const percent = (event.loaded / event.total) * 100;
@@ -463,32 +703,53 @@
             }
             const jobId = String(job.id);
             state.jobId = jobId;
-            appendLog({ message: `上传完成，任务 ${job.id} 已创建。`, level: "system" });
+            appendLog({
+                message: `上传完成，已以${submittedMode === "runtime" ? "运行时" : "静态"}模式创建任务 ${job.id}。`,
+                level: "system",
+            });
             // Upload and conversion use different progress scales. Reset without a
             // backwards animation, then continue with the converter's real value.
             elements.progressBar.style.transition = "none";
             applyJobIfCurrent(job, "upload", jobId, generation);
             window.requestAnimationFrame(() => elements.progressBar.style.removeProperty("transition"));
-            connectEvents(jobId, generation);
+            if (!TERMINAL_STATES.has(String(job.status || "").toLowerCase())) connectEvents(jobId, generation);
+            if (state.cancelAfterCreate) {
+                state.cancelAfterCreate = false;
+                if (!TERMINAL_STATES.has(String(job.status || "").toLowerCase())) {
+                    appendLog({ message: "任务编号已取得，正在再次确认终止请求。", level: "warning" });
+                    cancelConversion();
+                }
+            }
         });
 
-        request.addEventListener("error", () => {
+        request.addEventListener("error", async () => {
             if (!isCurrentGeneration(generation) || state.uploadRequest !== request) return;
             state.uploadRequest = null;
+            const cancellationRequested = state.cancelAfterCreate;
+            state.cancelAfterCreate = false;
+            if (await recoverSubmittedJob(state.uploadRequestId, generation, cancellationRequested)) return;
             handleStartFailure("无法连接转换服务，请检查服务器状态后重试。");
         });
         request.addEventListener("abort", () => {
             if (!isCurrentGeneration(generation) || state.uploadRequest !== request) return;
+            const cancellationRequested = state.cancelAfterCreate;
+            const requestId = state.uploadRequestId;
+            const cancellationConfirmed = state.uploadCancellationConfirmed;
             state.uploadRequest = null;
+            state.cancelAfterCreate = false;
             setStatus("cancelled", "上传已终止");
             setProgress(0, "上传已由用户终止", false);
             appendLog({ message: "上传已由用户终止。", level: "warning" });
             updateActionState();
+            if (cancellationRequested && !cancellationConfirmed) {
+                scheduleUploadCancellationRetry(requestId, generation);
+            }
         });
         request.send(form);
     }
 
     function handleStartFailure(message) {
+        state.cancelAfterCreate = false;
         setStatus("failed", "启动失败");
         setProgress(0, "未能创建转换任务", false);
         appendLog({ message, level: "error" });
@@ -590,7 +851,32 @@
 
     async function cancelConversion() {
         if (state.uploadRequest) {
-            state.uploadRequest.abort();
+            const request = state.uploadRequest;
+            const requestId = state.uploadRequestId;
+            state.cancelAfterCreate = true;
+            setStatus("running", "正在登记终止");
+            elements.phaseLabel.textContent = "正在按请求 UUID 阻止任务启动";
+            appendLog({
+                message: "正在先登记请求 UUID 的取消 tombstone，再中止文件上传；即使作业尚未创建也不得启动转换器。",
+                level: "warning",
+            });
+            updateActionState();
+            try {
+                const response = await fetch(`${API}/${encodeURIComponent(requestId)}/cancel`, {
+                    method: "POST",
+                    headers: { Accept: "application/json" },
+                });
+                if (!response.ok) throw new Error((await readError(response)) || `终止登记失败（HTTP ${response.status}）`);
+                state.uploadCancellationConfirmed = true;
+                appendLog({ message: "服务端已登记终止请求，正在中止上传连接。", level: "warning" });
+            } catch (error) {
+                appendLog({
+                    message: `${error.message || "终止登记失败"}；仍将中止上传，并在后台按请求 UUID 重试终止。`,
+                    level: "error",
+                });
+                scheduleUploadCancellationRetry(requestId, state.jobGeneration);
+            }
+            if (state.uploadRequest === request) request.abort();
             return;
         }
         if (!state.jobId || !state.job || TERMINAL_STATES.has(String(state.job.status).toLowerCase())) return;
@@ -616,6 +902,113 @@
             showToast(error.message || "终止请求失败。", "error");
             updateActionState();
         }
+    }
+
+    function scheduleUploadCancellationRetry(requestId, generation) {
+        if (!requestId || cancellationRetries.has(requestId)) return;
+        cancellationRetries.add(requestId);
+        void (async () => {
+            let lastError = "未能联系转换服务";
+            try {
+                for (let attempt = 1; attempt <= 2; attempt += 1) {
+                    await new Promise((resolve) => window.setTimeout(resolve, attempt * 260));
+                    try {
+                        const response = await fetch(`${API}/${encodeURIComponent(requestId)}/cancel`, {
+                            method: "POST",
+                            headers: { Accept: "application/json" },
+                            cache: "no-store",
+                        });
+                        if (response.ok) {
+                            if (isCurrentGeneration(generation) && state.uploadRequestId === requestId) {
+                                state.uploadCancellationConfirmed = true;
+                                appendLog({
+                                    message: `已在后台按请求 UUID ${requestId} 确认服务端接受终止请求。`,
+                                    level: "warning",
+                                });
+                            }
+                            return;
+                        }
+                        lastError = (await readError(response)) || `HTTP ${response.status}`;
+                    } catch (error) {
+                        lastError = error.message || "后台终止请求失败";
+                    }
+
+                    // The upload response may have been committed immediately before
+                    // XHR.abort(). Recover only by the exact request UUID; never guess
+                    // from file names or timestamps.
+                    try {
+                        const response = await fetch(`${API}/${encodeURIComponent(requestId)}`, {
+                            headers: { Accept: "application/json" },
+                            cache: "no-store",
+                        });
+                        if (response.ok) {
+                            const job = await response.json();
+                            const status = String(job?.status || "").toLowerCase();
+                            if (TERMINAL_STATES.has(status)) {
+                                if (isCurrentGeneration(generation) && state.uploadRequestId === requestId) {
+                                    appendLog({
+                                        message: status === "cancelled"
+                                            ? `已按请求 UUID ${requestId} 恢复并确认任务已终止。`
+                                            : `请求 UUID ${requestId} 的任务已在重试前进入终态（${status}）。`,
+                                        level: status === "cancelled" ? "warning" : "error",
+                                    });
+                                }
+                                return;
+                            }
+                        }
+                    } catch { /* The next exact-ID cancel retry remains authoritative. */ }
+                }
+                if (isCurrentGeneration(generation) && state.uploadRequestId === requestId) {
+                    appendLog({
+                        message: `请求 UUID ${requestId} 的后台终止重试仍失败（${lastError}）；页面保持“已终止”，请在服务恢复后核对该 UUID。`,
+                        level: "error",
+                    });
+                }
+            } finally {
+                cancellationRetries.delete(requestId);
+            }
+        })();
+    }
+
+    async function recoverSubmittedJob(requestId, generation, cancellationRequested) {
+        if (!requestId) return false;
+        for (let attempt = 0; attempt < 4 && isCurrentGeneration(generation); attempt += 1) {
+            try {
+                const response = await fetch(`${API}/${encodeURIComponent(requestId)}`, {
+                    headers: { Accept: "application/json" },
+                    cache: "no-store",
+                });
+                if (response.ok) {
+                    const job = await response.json();
+                    const jobId = String(job?.id || requestId);
+                    state.jobId = jobId;
+                    if (!applyJobIfCurrent(job, "upload-recovery", jobId, generation)) return false;
+                    appendLog({ message: `上传响应中断后已按请求 UUID 恢复任务 ${jobId}。`, level: "warning" });
+                    if (!TERMINAL_STATES.has(String(job.status || "").toLowerCase())) connectEvents(jobId, generation);
+                    if (cancellationRequested && !TERMINAL_STATES.has(String(job.status || "").toLowerCase())) {
+                        await cancelConversion();
+                    }
+                    return true;
+                }
+                if (response.status !== 404) return false;
+            } catch { /* Briefly retry while the server finishes publishing the prepared job. */ }
+            if (attempt < 3) await new Promise((resolve) => window.setTimeout(resolve, 180));
+        }
+        if (cancellationRequested && isCurrentGeneration(generation)) {
+            try {
+                const response = await fetch(`${API}/${encodeURIComponent(requestId)}/cancel`, {
+                    method: "POST",
+                    headers: { Accept: "application/json" },
+                });
+                if (!response.ok) return false;
+                const job = await response.json();
+                state.jobId = String(job?.id || requestId);
+                if (!applyJobIfCurrent(job, "upload-cancel-recovery", state.jobId, generation)) return false;
+                appendLog({ message: `已按请求 UUID ${state.jobId} 恢复终止状态。`, level: "warning" });
+                return true;
+            } catch { /* Fall through to the normal connection error. */ }
+        }
+        return false;
     }
 
     async function finishJob(job, source, generation = state.jobGeneration) {
@@ -651,7 +1044,7 @@
         } catch { /* The terminal snapshot is still useful. */ }
 
         if (!isCurrentJob(finishingId, generation)) return;
-        if (state.job?.reportAvailable) await loadReport(finishingId, generation);
+        if (status !== "cancelled" && state.job?.reportAvailable) await loadReport(finishingId, generation);
         else {
             elements.reportLoading.querySelector("p").textContent = status === "cancelled"
                 ? "任务已终止，未生成转换报告。完整过程仍可从日志包下载。"
@@ -970,21 +1363,40 @@
             const response = await fetch("/api/health", { headers: { Accept: "application/json" }, cache: "no-store" });
             if (!response.ok) throw new Error();
             const health = await response.json();
+            state.serviceOnline = true;
+            state.runtimeReady = health.runtimeReady === true;
+            state.runtimeReason = presentRuntimeReason(
+                health.runtimeReason
+                ?? health.runtimeUnavailableReason
+                ?? health.runtimeStatusReason,
+                state.runtimeReady,
+            );
             elements.serviceState.className = "service-state is-online";
-            elements.serviceStateText.textContent = "转换服务在线";
+            elements.serviceStateText.textContent = state.runtimeReady ? "转换服务在线 · Runtime 就绪" : "转换服务在线 · 静态可用";
+            elements.runtimeReadyBadge.className = `mode-readiness ${state.runtimeReady ? "readiness-ready" : "readiness-unavailable"}`;
+            elements.runtimeReadyBadge.textContent = state.runtimeReady ? "已就绪" : "不可用";
+            elements.runtimeReadyReason.textContent = state.runtimeReason;
+            elements.runtimeReadyReason.classList.toggle("is-error", !state.runtimeReady);
             const maxUploadBytes = Number(health.maxUploadBytes);
             state.maxUploadBytes = Number.isFinite(maxUploadBytes) && maxUploadBytes > 0 ? maxUploadBytes : null;
-            if (state.maxUploadBytes) {
-                elements.fileHelp.textContent = `.zip / .jar / .hjson / .json / .json5 · 上限 ${formatBytes(state.maxUploadBytes)} · 目录请先压缩`;
-                if (state.file && state.file.size > state.maxUploadBytes) {
-                    const oversizedFile = state.file;
-                    removeSelectedFile();
-                    showUploadError(`所选文件为 ${formatBytes(oversizedFile.size)}，超过服务器上限 ${formatBytes(state.maxUploadBytes)}。`);
-                }
+            updateFileHelp();
+            if (state.maxUploadBytes && selectedUploadBytes() > state.maxUploadBytes) {
+                const oversizedBytes = selectedUploadBytes();
+                clearSelectedFiles();
+                showUploadError(`所选输入合计 ${formatBytes(oversizedBytes)}，超过服务器上限 ${formatBytes(state.maxUploadBytes)}。`);
             }
+            updateActionState();
         } catch {
+            state.serviceOnline = false;
+            state.runtimeReady = false;
+            state.runtimeReason = "无法连接转换服务，因此无法验证运行时环境。";
             elements.serviceState.className = "service-state is-offline";
             elements.serviceStateText.textContent = "转换服务不可用";
+            elements.runtimeReadyBadge.className = "mode-readiness readiness-unavailable";
+            elements.runtimeReadyBadge.textContent = "不可用";
+            elements.runtimeReadyReason.textContent = state.runtimeReason;
+            elements.runtimeReadyReason.classList.add("is-error");
+            updateActionState();
         }
     }
 
@@ -1009,11 +1421,19 @@
             saveJobId(null);
             state.jobId = null;
             elements.jobId.textContent = "—";
+            elements.jobInput.textContent = "—";
+            elements.jobInput.title = "";
             resetTerminal("等待转换任务…");
         }
     }
 
     function bindEvents() {
+        elements.modeRuntime.addEventListener("change", () => {
+            if (elements.modeRuntime.checked) selectMode("runtime");
+        });
+        elements.modeStatic.addEventListener("change", () => {
+            if (elements.modeStatic.checked) selectMode("static");
+        });
         elements.dropZone.addEventListener("click", () => {
             if (!elements.fileInput.disabled) elements.fileInput.click();
         });
@@ -1036,6 +1456,15 @@
         window.addEventListener("dragover", (event) => event.preventDefault());
         window.addEventListener("drop", (event) => event.preventDefault());
         elements.removeFile.addEventListener("click", removeSelectedFile);
+        elements.selectSource.addEventListener("click", () => {
+            if (!elements.sourceInput.disabled) elements.sourceInput.click();
+        });
+        elements.sourceInput.addEventListener("change", () => selectFile(elements.sourceInput.files?.[0], "source"));
+        elements.removeSource.addEventListener("click", removeSelectedSource);
+        elements.allowModExecution.addEventListener("change", () => {
+            showUploadError("");
+            updateActionState();
+        });
         elements.startButton.addEventListener("click", startConversion);
         elements.cancelButton.addEventListener("click", cancelConversion);
         elements.copyLog.addEventListener("click", copyTerminal);
@@ -1047,6 +1476,7 @@
 
     async function initialize() {
         bindEvents();
+        syncModeUi();
         updateActionState();
         updateDownloads(null);
         checkHealth();

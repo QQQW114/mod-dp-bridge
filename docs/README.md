@@ -1,8 +1,11 @@
 # 文档索引
 
+当前版本变更见根目录 [`CHANGELOG.md`](../CHANGELOG.md)。
+
 ## 面向使用者
 
 - [`PROJECT_STATUS.md`](PROJECT_STATUS.md)：当前实现程度、实测结果与剩余风险。
+- [`WEB_UI.md`](WEB_UI.md)：默认关闭运行时能力、仅 loopback 的本地静态/可信运行时 Web UI 与 HTTP API。
 - [`CLI_RUNTIME_INTEGRATION.md`](CLI_RUNTIME_INTEGRATION.md)：可信本地 `runtime-convert` 使用、阶段和输出。
 - [`DYNAMIC_RUNTIME_EXTRACTION.md`](DYNAMIC_RUNTIME_EXTRACTION.md)：动态执行安全边界与三阶段提取。
 - [`TESTING.md`](TESTING.md)：自动化验证和 Desktop/服务器人工验收流程。
@@ -24,7 +27,6 @@
 
 ## 历史验证记录
 
-- [`WEB_UI.md`](WEB_UI.md)：已停止主线维护的本地静态 Web UI/API 记录。
 - [`MVP_VALIDATION_REPORT.md`](MVP_VALIDATION_REPORT.md)
 - [`JAVA_STATIC_SATURATION_BASELINE.md`](JAVA_STATIC_SATURATION_BASELINE.md)
 - [`SATURATION_FIREPOWER_ASSESSMENT.md`](SATURATION_FIREPOWER_ASSESSMENT.md)
