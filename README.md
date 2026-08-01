@@ -1,11 +1,11 @@
 # mod-dp-bridge
 
-将 Mindustry Mod、旧式 CP 和已有 Data Pack **尽力迁移**为 Mindustry **v159.7 / B480 Data Assets（DP）**。
+将 Mindustry Mod、旧式 CP 和已有 Data Pack **尝试并尽力迁移**为 Mindustry **v159.7 / B480 Data Assets（DP）**。
 
 当前主线同时提供本地 CLI 和仅监听 loopback 的本地 Web UI。对可信的已编译 Java Mod，工具使用官方 Mindustry v159.7 独立 JVM 真实加载 Mod，读取实际注册的 Content，再结合可选源码 AST 候选和官方 `DataPatcher.apply` 筛选，生成可审计的 DP；声明式 Mod、CP 和已有 DP 仍可使用不执行输入代码的静态模式。
 
 > [!IMPORTANT]
-> 本项目是实验性转换工具。转换成功只表示产物通过了当前自动检查，不表示 Java Mod 的全部行为已经无损还原。正式使用前必须审阅 `report.md`、`runtime-mapping.json`、`hybrid-report.json` 和日志，并在真实客户端地图及服务器中测试。
+> 本项目是实验性转换工具，旨在帮助DP作者开发，不要相信其转换稳定性。转换成功只表示产物通过了当前自动检查，不表示 Java Mod 的全部行为已经无损还原。正式使用前必须审阅 `report.md`、`runtime-mapping.json`、`hybrid-report.json` 和日志，一定在真实客户端地图及服务器中测试。
 
 本项目不属于 Mindustry 官方项目，也不保证任意 Mod 都能无损转换。
 
@@ -30,9 +30,9 @@
 - **官方 v159.7 Server JAR**：负责真实 Mod 加载和最终 DP parser/apply 验证；
 - **报告与日志**：明确记录接受、降级、排除、不支持、失败和筛选剔除项。
 
-项目不使用 `javaagent`，也不对发布 JAR 做通用反编译。
+项目不对发布 JAR 做通用反编译。
 
-本地 Web UI 只是这两种 CLI 模式之上的任务管理层。运行时能力默认关闭；启用后仍只允许本机 loopback 使用，不属于公网网站、远程上传服务或多用户平台。
+Web UI 只是这两种 CLI 模式之上的任务管理层。运行时能力默认关闭；启用后仍只允许本机 loopback 使用，如你想要部署网站，需改动项目并自行负责安全问题。
 
 ## 两种转换模式
 
@@ -83,7 +83,7 @@
 - 单位/炮塔描边及炮塔、工厂建造栏组合图；
 - 内容和资产引用到 `dp-` 命名空间的迁移。
 
-### 明确放弃
+### 放弃
 
 - 科技树和 `research`；
 - Planet、Sector 和 Mod 自带新地图；
@@ -96,7 +96,7 @@
 
 ### 版本边界
 
-- 唯一目标：**Mindustry v159.7 / Build 480**；
+- 开发目标：**Mindustry v159.7 / Build 480**；
 - 工具可尝试读取面向 146 及以上版本的输入，但没有 146–158 历史运行时模拟器；
 - 原 Mod 若本身无法在官方 v159.7 加载，`runtime-convert` 也无法绕过其 API/依赖不兼容；
 - 非官方 MindustryX/MDT Server JAR 不作为当前动态主线的验证依据。
@@ -104,7 +104,7 @@
 ## 安全警告
 
 > [!CAUTION]
-> `runtime-convert` 会在独立 JVM 中真正执行所提供的 Mod JAR 和官方 Server JAR。独立进程不是安全沙箱：代码仍拥有当前用户可用的文件、网络和系统权限。只可处理你信任且来源明确的 JAR，建议在专用低权限账户、虚拟机或容器中运行。
+> `runtime-convert` 会在独立 JVM 中真正执行所提供的 Mod JAR 和官方 Server JAR。独立进程并非安全沙箱：其仍拥有当前用户可用的文件、网络和系统权限。需确认只处理信任的 JAR，请不要不对本项目做更改便直接部署网站。
 
 同一警告适用于本地 Web UI 的运行时模式：浏览器选择 JAR 后，本机 Web 服务会以其所属系统用户的权限执行该 JAR。取消任务、超时、临时目录和进程树终止只用于故障隔离，不能约束恶意代码。
 
@@ -288,7 +288,7 @@ http://127.0.0.1:8080/
 
 若可选源码索引或 AST 候选阶段失败，程序会保守回退到 JAR 动态基础结果并写明原因；不会把未经验证的源码候选静默加入产物。
 
-## 如何判断结果
+## 判断结果
 
 Content 结果：
 
@@ -311,7 +311,7 @@ Content 结果：
 
 `DataPatcher.apply` 的 0 failed / 0 warning 只证明数据可解析和注册，不证明炮塔开火、工厂生产、单位 AI、自定义 Effect、音频播放或地图保存重开与原 Mod 等价。
 
-最低人工验收：
+人工验收：
 
 1. 用精确的 v159.7/B480 Desktop 导入 DP；
 2. 在地图中放置代表性的方块、炮塔、工厂和单位；
@@ -319,7 +319,7 @@ Content 结果：
 4. 保存地图，完全退出客户端，再重开；
 5. 用匹配 B480 服务器实际加载该地图/存档并联机测试。
 
-## New Horizon 2.2.1 自动与人工实测
+## New Horizon 2.2.1 
 
 使用发布 JAR 与对应源码 ZIP 执行完整 `runtime-convert`：
 
@@ -333,17 +333,6 @@ Content 结果：
 | 最终 DataPatcher failed / warning | 0 / 0 |
 | 最终报告 error | 0 |
 
-本地验证产物（`work/` 已被 `.gitignore` 排除，不随仓库分发）：
-
-```text
-work/runtime-convert-new-horizon-final2-20260801/NewHorizonMod.2.2.1-dp-v159.7.zip
-SHA-256: 86721D815437D7039CF950E56C409039D79B800C7D2D6EEAC8175E692C7F61FE
-```
-
-用户随后在真实客户端中确认：DP 能够加载并出现新内容，但炮塔缺少弹药，退出地图时客户端崩溃；服务器地图/存档加载仍未验证。
-
-因此，这个样本证明了“真实加载 JAR、提取注册内容、结合源码候选并生成可导入 DP”的链路可运行，同时也证明 `DataPatcher` 零失败、零警告和客户端成功导入都不等于玩法等价。New Horizon 大量依赖自行编写的 Java 内容和行为，不适合作为项目总体兼容率样本。
-
 ## 当前已知限制
 
 1. 纯动态 mapper 当前重点覆盖 Item、Liquid 和 StatusEffect；没有源码时，大量 Block/Unit 会明确保持 unsupported。
@@ -352,12 +341,10 @@ SHA-256: 86721D815437D7039CF950E56C409039D79B800C7D2D6EEAC8175E692C7F61FE
 4. 原 Mod 若依赖其他 Mod、旧版 API 或非官方运行时而无法在官方 v159.7 加载，extractor 会失败并保留日志。
 5. Headless apply 不验证 Desktop atlas、真实渲染、音频播放或地图持久化。
 6. 音频当前不自动转码；扩展名与容器不一致会报告并保留原始字节。
-7. v159.7/B480 客户端大型 Data Assets 场景存在上游 `DataImagePacker.unload()` 退出崩溃，详见 `docs/B480_EXIT_UNLOAD_CRASH_20260730.md`。
-8. 本地 Web UI 不增加转换能力；它只编排现有 CLI。启用运行时模式后，输入 JAR 仍是拥有当前用户权限的可执行代码。
 
 ## Web UI 状态
 
-`bridge-web` 在 0.2.0 中恢复为本地任务管理入口，并提供静态/可信运行时双模式。它默认关闭运行时执行，只允许 loopback；没有认证、授权、租户隔离或安全沙箱，明确不支持公网部署和远程用户上传。
+`bridge-web` 在 0.2.0 中作为本地任务管理入口，提供静态/可信运行时双模式。它默认关闭运行时执行，只允许 loopback；没有认证、授权、租户隔离或安全沙箱，不支持公网部署和远程用户上传。
 
 运行时作业接收发布 JAR 和可选源码 ZIP。Server JAR 只能由本机操作员配置，不能通过网页上传或由请求指定。网页可查看进度与终端日志、取消任务、下载 DP 和完整日志，并折叠显示完成、降级、排除、不支持和失败项。
 
@@ -388,9 +375,10 @@ SHA-256: 86721D815437D7039CF950E56C409039D79B800C7D2D6EEAC8175E692C7F61FE
 
 ## 额外声明
 
-本项目为vibe coding产物，使用模型为gpt5.6-sol，初版为8小时内完成开发，仅以饱和火力为参照与测试mod，实际对于其他mod的转换以及转换产物可用性未得到验证，本项目正处于初期开发阶段，可能存在较多bug，如发现问题请积极提交
+本项目为vibe coding产物，使用模型为gpt5.6-sol，开发阶段仅以饱和火力与New Horizon作测试mod，效果仅对DP开发有帮助作用，不能够且不可能完整转换mod，实际对于其他mod的转换以及转换产物可用性也未进行验证
+饱和火力能够较好的转换大部分内容，而New Horizon几乎不能转换单位与炮塔
+项目正处于初期开发阶段，可能存在较多bug，如发现问题请积极提交
 
-> 上述原句为初版历史声明，予以原样保留。此后项目已使用 New Horizon 2.2.1 完成自动 `runtime-convert --source` E2E，并由用户确认产物可在真实客户端加载和显示新内容；但炮塔缺少弹药且退出地图时崩溃，服务器地图/存档加载仍未验证，因此仍不应将自动 apply 或导入成功解释为完整可用性证明。
 
 ## 许可证
 
@@ -401,4 +389,3 @@ SHA-256: 86721D815437D7039CF950E56C409039D79B800C7D2D6EEAC8175E692C7F61FE
 - 转换器许可证不会替你重新许可输入 Mod；
 - 转换产物中的源码、贴图、音频和其他资产仍受原作者许可证约束；
 - 使用、分发或公开转换产物前，请自行确认原 Mod 许可证允许相应行为；
-- `bridge-converter/src/main/resources/io/github/moddpbridge/converter/mindustry-v159/turret-bases/` 中的参考 PNG 来源于 Mindustry，并依 GPLv3 使用和分发。
