@@ -1774,6 +1774,17 @@ internal object ConversionPlanner {
         } catch (error: ConversionException) {
             fail("TEXT_PARSE_FAILED", error.message ?: "Text parsing failed", diagnostics, SourceLocation(entry.path), error)
         }
+        if (normalized.compatibilityMode != null) {
+            diagnostics += Diagnostic(
+                code = "MULTILINE_STRING_COMPATIBILITY_REPAIR",
+                severity = DiagnosticSeverity.WARNING,
+                message = "A multi-line string was rewritten as escaped JSON so the HJSON parser could read the file.",
+                stage = ValidationStage.STRUCTURE,
+                location = SourceLocation(entry.path),
+                details = normalized.compatibilityMode,
+                suggestion = "Review the normalized file carefully because multi-line strings were rewritten best-effort.",
+            )
+        }
         if (normalized.removedResearchPaths.isNotEmpty()) {
             diagnostics += Diagnostic(
                 code = "RESEARCH_REMOVED",

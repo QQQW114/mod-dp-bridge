@@ -528,6 +528,69 @@ class BridgeConverterTest {
     }
 
     @Test
+    fun `repairs multi-line double-quoted strings in metadata and content`() {
+        val input = temp.resolve("multiline-mod").createDirectories()
+        input.resolve("mod.hjson").writeText(
+            """
+            name: "multiline-mod"
+            description: "
+            神秘mod
+            贴图抠得依托势，但胜在能看（）
+            "
+            """.trimIndent() + "\n",
+        )
+        input.resolve("assets/content/items").createDirectories()
+        input.resolve("assets/content/items/alloy.hjson").writeText(
+            """
+            color: ffffff
+            description: "
+            line one
+            line two
+            "
+            """.trimIndent(),
+        )
+
+        val result = BridgeConverter.convert(
+            ConversionRequest(input, temp.resolve("multiline-out"), staticSourceExporters = emptyList()),
+        )
+
+        assertEquals(DetectedSourceKind.MOD, result.detectedKind)
+        assertFalse(result.diagnostics.any { it.code == "TEXT_PARSE_FAILED" })
+        assertTrue(result.diagnostics.any { it.code == "MULTILINE_STRING_COMPATIBILITY_REPAIR" })
+        val item = Files.readString(result.serverAssets.resolve("content/items/alloy.hjson"))
+        assertTrue(item.contains("line one"))
+        assertTrue(item.contains("line two"))
+    }
+
+    @Test
+    fun `repairs triple and single-quoted multi-line strings in content`() {
+        val input = temp.resolve("multiline-quotes-mod").createDirectories()
+        input.resolve("mod.hjson").writeText("name: multiline-quotes\n")
+        input.resolve("assets/content/blocks").createDirectories()
+        input.resolve("assets/content/blocks/wall.hjson").writeText(
+            "type: Wall\n" +
+                "details: \"\"\"\n" +
+                "alpha\n" +
+                "beta\n" +
+                "\"\"\"\n" +
+                "notes: '\n" +
+                "single quoted\n" +
+                "block\n" +
+                "'\n",
+        )
+
+        val result = BridgeConverter.convert(
+            ConversionRequest(input, temp.resolve("multiline-quotes-out"), staticSourceExporters = emptyList()),
+        )
+
+        assertFalse(result.diagnostics.any { it.code == "TEXT_PARSE_FAILED" })
+        val wall = Files.readString(result.serverAssets.resolve("content/blocks/wall.hjson"))
+        assertTrue(wall.contains("alpha"))
+        assertTrue(wall.contains("beta"))
+        assertTrue(wall.contains("single quoted"))
+    }
+
+    @Test
     fun `repackages existing data pack deterministically`() {
         val sourceZip = temp.resolve("existing.zip")
         createZip(
