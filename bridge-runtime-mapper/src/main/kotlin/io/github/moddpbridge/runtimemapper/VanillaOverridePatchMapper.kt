@@ -281,6 +281,25 @@ object VanillaOverridePatchMapper {
         return candidates.sorted().take(MAX_PROVENANCE_ENTRIES)
     }
 
+    /**
+     * Names one Mod content reference could have inside the packaged DP, most literal first.
+     *
+     * The converter strips the Mod namespace when it writes a declaration, and both spellings exist in
+     * practice: `sfire-mod-magnetic-strif` becomes `magnetic-strif`, while a declaration that derives its
+     * name from another Mod content object nests the namespace and becomes `ore-chromium` from
+     * `sfire-mod-ore-sfire-mod-chromium`.
+     */
+    private fun dpContentNameCandidates(runtimeName: String, owner: String): List<String> {
+        val prefix = "$owner-"
+        val withoutLeading = if (runtimeName.startsWith(prefix, ignoreCase = true)) {
+            runtimeName.substring(prefix.length)
+        } else {
+            runtimeName
+        }
+        val withoutAny = runtimeName.replace(Regex(Regex.escape(prefix), RegexOption.IGNORE_CASE), "")
+        return listOf(runtimeName, withoutLeading, withoutAny).distinct()
+    }
+
     private fun reduction(contentType: String, name: String, field: String, code: String, detail: String) =
         VanillaOverrideReduction(contentType, name, field, code, detail)
 
@@ -329,13 +348,21 @@ object VanillaOverridePatchMapper {
                 val owner = value.string("ownerMod")
                 when {
                     owner == null -> JsonPrimitive(target)
-                    options.migratedContentNames.contains(target) -> JsonPrimitive(target)
                     else -> {
-                        reduce(
-                            CODE_REFERENCED_CONTENT_NOT_MIGRATED,
-                            "References $owner content '$target', which this Data Patch does not declare.",
-                        )
-                        null
+                        // A Mod reference is registered under a Mod-namespaced runtime name, while the
+                        // packaged Data Patch declares the name it wrote to disk. Resolve through the
+                        // names this DP actually declares instead of guessing the naming rule.
+                        val resolved = dpContentNameCandidates(target, owner)
+                            .firstOrNull(options.migratedContentNames::contains)
+                        if (resolved != null) {
+                            JsonPrimitive(resolved)
+                        } else {
+                            reduce(
+                                CODE_REFERENCED_CONTENT_NOT_MIGRATED,
+                                "References $owner content '$target', which this Data Patch does not declare.",
+                            )
+                            null
+                        }
                     }
                 }
             }

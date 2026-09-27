@@ -205,6 +205,43 @@ class VanillaOverridePatchMapperTest {
     }
 
     @Test
+    fun resolvesModReferencesThroughTheNamesTheDpDeclares() {
+        // Runtime names are Mod-namespaced; the packaged DP writes the declaration without the namespace,
+        // and nested names (OreBlock over an already namespaced item) lose every occurrence.
+        val overrides = listOf(
+            """{"field":"status","value":{"declaredType":"mindustry.type.StatusEffect","kind":"contentRef","contentType":"status","name":"sfire-mod-magnetic-strif","ownerMod":"sfire-mod"}}""",
+            """{"field":"item","value":{"declaredType":"mindustry.type.Item","kind":"contentRef","contentType":"item","name":"sfire-mod-ore-sfire-mod-chromium","ownerMod":"sfire-mod"}}""",
+        ).joinToString(",")
+        val path = artifact("""{"contentType":"block","name":"parallax","runtimeName":"parallax","overrides":[$overrides]}""")
+
+        val result = VanillaOverridePatchMapper.map(
+            path,
+            defaultOptions().copy(migratedContentNames = setOf("magnetic-strif", "ore-chromium")),
+        )
+
+        val fields = json.parseToJsonElement(String(result.patchBytes)).jsonObject["block"]!!
+            .jsonObject["parallax"]!!.jsonObject
+        assertEquals("magnetic-strif", fields["status"]!!.jsonPrimitive.content)
+        assertEquals("ore-chromium", fields["item"]!!.jsonPrimitive.content)
+        assertEquals(2, result.summary.patchedFields)
+        assertTrue(result.reductions.isEmpty(), result.reductions.toString())
+    }
+
+    @Test
+    fun stillDropsModReferencesTheDpDoesNotDeclare() {
+        val path = artifact(
+            """{"contentType":"block","name":"parallax","runtimeName":"parallax","overrides":[""" +
+                """{"field":"status","value":{"declaredType":"mindustry.type.StatusEffect","kind":"contentRef","contentType":"status","name":"sfire-mod-magnetic-strif","ownerMod":"sfire-mod"}}""" +
+                """]}""",
+        )
+
+        val result = mapWithDefaults(path, defaultOptions().copy(migratedContentNames = emptySet()))
+
+        assertEquals(0, result.summary.patchedFields)
+        assertEquals(VanillaOverridePatchMapper.CODE_REFERENCED_CONTENT_NOT_MIGRATED, result.reductions.single().code)
+    }
+
+    @Test
     fun attributesThePatchToTheClassEntryOfTheWatchedSource() {
         val result = mapArtifact("""{"contentType":"block","name":"salvo","overrides":[""" + number("health", "900") + """]}""")
 

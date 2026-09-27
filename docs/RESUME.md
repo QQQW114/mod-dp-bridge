@@ -72,6 +72,19 @@ work/sf406-v1605-override4/  # 一轮完整运行（exit 0，含 @NoPatch 过滤
 关闭开关：`--vanilla-overrides=off`（Web 端取消勾选“还原该 mod 对原版内容的修改”）。
 设计细节与被源码推翻的两处原始判断见 `docs/research/VANILLA_OVERRIDE_PLAN.md` 第七、八节。
 
+**可交付实测的 DP（当前最新，5 轮实测中第 5 轮）**：
+
+```text
+work/dp-test-sf406-v1605/                       # 测试包（见包内 README-测试说明.md）
+  Saturation-Firepower-4.0.6-dp-v160.5.zip      7,247,210 bytes
+  sha256 B4CB419CE195D6CBA9512E374C8EFBDBEAC93FD3AA26935D579AA72ABE010E4C
+  config-assets/                                2710 个文件（= 服务端 <server>/config/assets）
+  install-to-server.ps1                         一键安装（自动备份已有 config/assets）
+  verification.json / 验收对照表.txt / patches-vanilla-overrides.hjson
+  # 部署：copy config-assets/* → <server>/config/assets/，客户端 v160.5 且不要装 sfire-mod
+```
+
+
 ## 四、环境事实与实测命令
 
 - JDK 21（`JAVA_HOME=C:\Program Files\Java\jdk-21`），Gradle wrapper 9.2.1；仓库路径含中文，**必须**用包装脚本（它通过 ASCII junction 运行，避免 test worker classpath 编码问题）：
