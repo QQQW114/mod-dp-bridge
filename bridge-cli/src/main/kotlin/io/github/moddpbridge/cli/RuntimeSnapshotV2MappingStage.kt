@@ -8,7 +8,8 @@ import java.nio.file.Files
 internal object RuntimeSnapshotV2MappingStage : RuntimeToDpMappingStage {
     override fun map(input: RuntimeToDpMappingInput, logger: BridgeLogger): RuntimeToDpMappingResult {
         if (input.snapshot.schemaVersion != 2) {
-            val summary = "Runtime snapshot schema ${input.snapshot.schemaVersion} is not supported by the v159.7 mapper."
+            val summary = "Runtime snapshot schema ${input.snapshot.schemaVersion} is not supported by the " +
+                "${input.target.displayName} mapper."
             logger.warn(summary)
             return RuntimeToDpMappingResult(
                 status = RuntimePipelineStageStatus.NOT_RUN,
@@ -17,8 +18,15 @@ internal object RuntimeSnapshotV2MappingStage : RuntimeToDpMappingStage {
             )
         }
 
-        logger.info("Mapping the earliest available typed registration snapshot and exact release-JAR assets to inert v159.7 declarations.")
-        val result = RuntimeSnapshotMapper.prepare(input.snapshot.path, input.modJar)
+        logger.info(
+            "Mapping the earliest available typed registration snapshot and exact release-JAR assets " +
+                "to inert ${input.target.displayName} declarations.",
+        )
+        val result = RuntimeSnapshotMapper.prepare(
+            snapshot = input.snapshot.path,
+            modJar = input.modJar,
+            target = input.target,
+        )
         val report = input.outputDirectory.resolve("runtime-mapping.json")
         Files.writeString(report, result.reportJson, StandardCharsets.UTF_8)
         result.prepared.logs.forEach(logger::info)

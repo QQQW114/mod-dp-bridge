@@ -2,6 +2,7 @@ package io.github.moddpbridge.runtimemapper
 
 import io.github.moddpbridge.converter.ConvertedFileStatus
 import io.github.moddpbridge.model.ContentDisposition
+import io.github.moddpbridge.model.MindustryTarget
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipEntry
@@ -16,6 +17,7 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -41,7 +43,7 @@ class RuntimeSnapshotMapperTest {
             registrationStack = listOf("example.RuntimeMod\$1.<init>(RuntimeMod.java:10)"),
         )
 
-        val result = RuntimeSnapshotMapper.prepare(snapshot, jar)
+        val result = RuntimeSnapshotMapper.prepare(snapshot, jar, target = MindustryTarget.V159_7)
 
         assertEquals(1, result.summary.convertedContents)
         val content = result.prepared.files.single { it.outputPath == "content/items/alloy.hjson" }
@@ -89,6 +91,7 @@ class RuntimeSnapshotMapperTest {
             snapshot,
             jar,
             RuntimeSnapshotMappingOptions(includeAssets = false),
+            target = MindustryTarget.V159_7,
         )
 
         assertEquals(ContentDisposition.FAILED, result.prepared.contentResults.single().disposition)
@@ -110,6 +113,7 @@ class RuntimeSnapshotMapperTest {
             snapshot,
             jar,
             RuntimeSnapshotMappingOptions(includeAssets = false),
+            target = MindustryTarget.V159_7,
         )
 
         assertEquals(1, result.summary.generatedContentFiles)
@@ -131,10 +135,27 @@ class RuntimeSnapshotMapperTest {
             snapshot,
             jar,
             RuntimeSnapshotMappingOptions(includeAssets = false),
+            target = MindustryTarget.V159_7,
         )
 
         assertEquals(ContentDisposition.FAILED, result.prepared.contentResults.single().disposition)
         assertTrue(result.prepared.diagnostics.any { it.code == "RUNTIME_PHASE_PRESENCE_NON_MONOTONIC" })
+    }
+
+    @Test
+    fun `snapshot from another pinned build is rejected instead of reinterpreted`() {
+        val jar = jar("example/RuntimeMod\$1.class" to byteArrayOf(1))
+        val snapshot = snapshot(
+            runtimeClass = "example.RuntimeMod\$1",
+            registrationStack = listOf("example.RuntimeMod\$1.<init>(RuntimeMod.java:10)"),
+        )
+
+        val error = assertFailsWith<RuntimeSnapshotMappingException> {
+            RuntimeSnapshotMapper.prepare(snapshot, jar, target = MindustryTarget.V160_5)
+        }
+
+        assertTrue(error.message.orEmpty().contains("build 159"), error.message)
+        assertTrue(error.message.orEmpty().contains("160.5"), error.message)
     }
 
     private fun snapshot(

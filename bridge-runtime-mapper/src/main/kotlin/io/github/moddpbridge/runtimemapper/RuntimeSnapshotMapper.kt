@@ -10,6 +10,7 @@ import io.github.moddpbridge.model.ContentDisposition
 import io.github.moddpbridge.model.ContentKind
 import io.github.moddpbridge.model.Diagnostic
 import io.github.moddpbridge.model.DiagnosticSeverity
+import io.github.moddpbridge.model.MindustryTarget
 import io.github.moddpbridge.model.SourceLocation
 import io.github.moddpbridge.model.ValidationStage
 import io.github.moddpbridge.runtimeassets.RuntimeAssetDiagnostic
@@ -75,8 +76,6 @@ class RuntimeSnapshotMappingException(message: String, cause: Throwable? = null)
 /** Maps typed runtime snapshot schema v2 into the v159.7 DataPatcher declarative subset. */
 object RuntimeSnapshotMapper {
     private const val supportedSnapshotSchema = 2
-    private const val supportedSnapshotBuild = 159
-    private const val supportedSnapshotRevision = 7
     private const val maxSnapshotBytes = 128L * 1024L * 1024L
     private val implementedContentTypes = setOf("item", "liquid", "status")
     private val json = Json {
@@ -86,10 +85,17 @@ object RuntimeSnapshotMapper {
         ignoreUnknownKeys = true
     }
 
+    /**
+     * Maps a retained runtime snapshot onto v159.7/v160-style Data Assets declarations for one pinned target.
+     *
+     * [target] decides which build/revision the snapshot must have been captured from. The snapshot is never
+     * reinterpreted across targets: a v159.7 snapshot is not silently mapped as a v160.5 one.
+     */
     fun prepare(
         snapshot: Path,
         modJar: Path,
         options: RuntimeSnapshotMappingOptions = RuntimeSnapshotMappingOptions(),
+        target: MindustryTarget = MindustryTarget.PRIMARY,
     ): RuntimeSnapshotMappingResult {
         val snapshotPath = snapshot.toAbsolutePath().normalize()
         val jarPath = modJar.toAbsolutePath().normalize()
@@ -121,7 +127,7 @@ object RuntimeSnapshotMapper {
             ?: throw RuntimeSnapshotMappingException("Runtime snapshot has no targetMod.")
         val contents = root["contents"] as? JsonArray
             ?: throw RuntimeSnapshotMappingException("Runtime snapshot has no contents array.")
-        validateSnapshotHeader(root, targetMod, contents)
+        validateSnapshotHeader(root, targetMod, contents, target)
 
         val provenanceIndex = try {
             JarProvenanceIndex.read(jarPath)
@@ -967,15 +973,20 @@ object RuntimeSnapshotMapper {
         suggestion = suggestion,
     )
 
-    private fun validateSnapshotHeader(root: JsonObject, targetMod: String, contents: JsonArray) {
+    private fun validateSnapshotHeader(
+        root: JsonObject,
+        targetMod: String,
+        contents: JsonArray,
+        target: MindustryTarget,
+    ) {
         val gameVersion = root["gameVersion"] as? JsonObject
             ?: throw RuntimeSnapshotMappingException("Runtime snapshot has no gameVersion object.")
         val build = gameVersion.int("build")
         val revision = gameVersion.int("revision")
-        if (build != supportedSnapshotBuild || revision != supportedSnapshotRevision) {
+        if (build != target.build || revision != target.revision) {
             throw RuntimeSnapshotMappingException(
                 "Runtime snapshot was captured from build $build revision $revision; " +
-                    "this mapper currently requires v$supportedSnapshotBuild.$supportedSnapshotRevision exactly.",
+                    "this mapping run targets ${target.displayName} (build ${target.build} revision ${target.revision}).",
             )
         }
         val loadedMod = root["loadedMod"] as? JsonObject

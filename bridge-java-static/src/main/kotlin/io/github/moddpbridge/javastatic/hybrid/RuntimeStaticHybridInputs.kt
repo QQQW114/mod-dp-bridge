@@ -8,6 +8,7 @@ import io.github.moddpbridge.javastatic.JavaAstStaticExporter
 import io.github.moddpbridge.model.ContentKind
 import io.github.moddpbridge.model.Diagnostic
 import io.github.moddpbridge.model.DiagnosticSeverity
+import io.github.moddpbridge.model.MindustryTarget
 import io.github.moddpbridge.model.SourceLocation
 import io.github.moddpbridge.model.ValidationStage
 import java.io.ByteArrayOutputStream
@@ -48,6 +49,8 @@ data class RuntimeStaticHybridRequest(
     val source: Path,
     val sourceIndexReport: Path,
     val runtimePrepared: RuntimePreparedConversion,
+    /** Pinned target whose build/revision the retained snapshot must report. */
+    val target: MindustryTarget = MindustryTarget.PRIMARY,
     val options: HybridCandidateOptions = HybridCandidateOptions(),
     val limits: HybridSourceLimits = HybridSourceLimits(),
 )
@@ -69,7 +72,7 @@ object RuntimeStaticHybrid {
         require(Files.isRegularFile(request.sourceIndexReport)) {
             "Source-index report is not a file: ${request.sourceIndexReport}"
         }
-        val snapshot = readSnapshot(request.snapshot, request.limits)
+        val snapshot = readSnapshot(request.snapshot, request.limits, request.target)
         val provenance = readSourceIndex(request.sourceIndexReport, request.limits)
         val sources = HybridJavaSourceReader.read(request.source, request.limits)
         val staticExport = JavaAstStaticExporter().export(
@@ -100,7 +103,7 @@ object RuntimeStaticHybrid {
         )
     }
 
-    private fun readSnapshot(path: Path, limits: HybridSourceLimits): SnapshotInventory {
+    private fun readSnapshot(path: Path, limits: HybridSourceLimits, target: MindustryTarget): SnapshotInventory {
         checkFileSize(path, limits.maxSnapshotBytes, "runtime snapshot")
         val root = parseJson(path, limits.maxSnapshotBytes)
         require(root.int("schemaVersion") == 2) { "Hybrid mapping requires runtime snapshot schema 2." }
@@ -108,8 +111,11 @@ object RuntimeStaticHybrid {
             ?: throw IllegalArgumentException("Runtime snapshot has no gameVersion object.")
         require(game.string("type").equals("official", ignoreCase = true) &&
             game.string("modifier").equals("release", ignoreCase = true) &&
-            game.int("build") == 159 && game.int("revision") == 7
-        ) { "Hybrid mapping accepts only the official Mindustry v159.7 release snapshot." }
+            game.int("build") == target.build && game.int("revision") == target.revision
+        ) {
+            "Hybrid mapping accepts only the official ${target.displayName} release snapshot " +
+                "(build ${target.build} revision ${target.revision})."
+        }
         val targetMod = root.string("targetMod")?.takeIf(String::isNotBlank)
             ?: throw IllegalArgumentException("Runtime snapshot has no targetMod.")
         val records = root["contents"] as? JsonArray
@@ -127,7 +133,7 @@ object RuntimeStaticHybrid {
             }
             val fullName = record.string("name")?.takeIf(String::isNotBlank) ?: return@forEachIndexed
             val location = SourceLocation(path.toString(), "$.contents[$index]")
-            val localName = fullName.removePrefixIgnoreCase("$targetMod-")
+            val localName = fullName.removeModNamespace(targetMod)
             val phases = record["runtimeSnapshots"] as? JsonObject
             val phaseKeys = listOf("preContentInit", "postContentInit", "finalAfterModInit")
             val indexedFallbacks = phaseKeys.mapIndexedNotNull { phaseIndex, phase ->
@@ -374,6 +380,22 @@ private fun JsonObject.int(name: String): Int? = this[name]?.jsonPrimitive?.intO
 
 private fun String.removePrefixIgnoreCase(prefix: String): String? =
     if (startsWith(prefix, ignoreCase = true)) substring(prefix.length) else null
+
+/**
+ * Strips every occurrence of the Mod namespace from a runtime content name.
+ *
+ * Mod content that derives its name from another mod content object can nest the namespace more than
+ * once at runtime. Saturation Firepower declares ore blocks as `new OreBlock(SFItems.chromium)`, and
+ * `OreBlock(Item)` prefixes `"ore-"` onto the already namespaced item name, so the registered name is
+ * `sfire-mod-ore-sfire-mod-chromium` while the AST local name is `ore-chromium`.
+ *
+ * The fallback keeps the original name when no namespace is present, so ordinary content is unchanged.
+ */
+private fun String.removeModNamespace(mod: String): String {
+    val prefix = "$mod-"
+    if (!contains(prefix, ignoreCase = true)) return this
+    return replace(Regex(Regex.escape(prefix), RegexOption.IGNORE_CASE), "")
+}
 
 private fun normalizeSourcePath(path: String): String = path.replace('\\', '/').trim('/')
 

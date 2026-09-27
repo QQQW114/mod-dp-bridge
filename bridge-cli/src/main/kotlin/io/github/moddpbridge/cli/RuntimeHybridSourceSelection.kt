@@ -12,6 +12,7 @@ import io.github.moddpbridge.javastatic.hybrid.HybridValidationState
 import io.github.moddpbridge.javastatic.hybrid.RuntimeStaticHybrid
 import io.github.moddpbridge.javastatic.hybrid.RuntimeStaticHybridRequest
 import io.github.moddpbridge.model.Diagnostic
+import io.github.moddpbridge.model.MindustryTarget
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,6 +28,8 @@ import kotlinx.serialization.json.put
 
 internal data class RuntimeHybridSourceSelectionInput(
     val snapshot: RuntimeSnapshotDescriptor,
+    /** Pinned target the snapshot was captured from; drives the hybrid snapshot gate. */
+    val target: MindustryTarget,
     val modJar: Path,
     val source: Path,
     val sourceIndexReport: Path,
@@ -71,6 +74,7 @@ internal class RuntimeHybridSourceSelector(
                 source = input.source,
                 sourceIndexReport = input.sourceIndexReport,
                 runtimePrepared = input.runtimePrepared,
+                target = input.target,
                 options = HybridCandidateOptions(replaceOfficialUnitFallbackTemplates = true),
             ),
         )
@@ -115,6 +119,7 @@ internal class RuntimeHybridSourceSelector(
                         outputDirectory = attemptDirectory,
                         outputBaseName = attemptName,
                         overwrite = true,
+                        target = input.target,
                         limits = runtimeConversionSecurityLimits(),
                         logSink = { line -> logger.raw("[hybrid-package] $line") },
                     ),

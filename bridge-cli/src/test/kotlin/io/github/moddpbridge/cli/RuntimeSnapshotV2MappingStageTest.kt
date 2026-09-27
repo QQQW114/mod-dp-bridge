@@ -1,5 +1,6 @@
 package io.github.moddpbridge.cli
 
+import io.github.moddpbridge.model.MindustryTarget
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.ZipEntry
@@ -62,6 +63,7 @@ class RuntimeSnapshotV2MappingStageTest {
                         gameBuild = 159,
                         gameRevision = 7,
                     ),
+                    target = MindustryTarget.V159_7,
                     modJar = modJar,
                     sourceIndexReport = null,
                     outputDirectory = output,

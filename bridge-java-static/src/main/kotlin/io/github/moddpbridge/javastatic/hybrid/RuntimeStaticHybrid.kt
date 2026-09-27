@@ -7,6 +7,7 @@ import io.github.moddpbridge.converter.RuntimePreparedFile
 import io.github.moddpbridge.converter.RuntimePreparedOutputNamespace
 import io.github.moddpbridge.converter.StaticExportResult
 import io.github.moddpbridge.converter.StaticGeneratedFile
+import io.github.moddpbridge.javastatic.MindustryJavaMappings
 import io.github.moddpbridge.model.ContentDisposition
 import io.github.moddpbridge.model.ContentKind
 import io.github.moddpbridge.model.Diagnostic
@@ -307,6 +308,22 @@ class HybridCandidateSet internal constructor(
                         ),
                     )
                 }
+                if (candidate.kind == ContentKind.BLOCK &&
+                    !candidate.staticTargetType.equals(candidate.fallbackType, ignoreCase = true)
+                ) {
+                    add(
+                        Diagnostic(
+                            code = "HYBRID_BLOCK_FALLBACK_TYPE_SUBSTITUTED",
+                            severity = DiagnosticSeverity.WARNING,
+                            message = "A Mod-only Block class was emitted with a curated constructible vanilla parser.",
+                            stage = ValidationStage.STRUCTURE,
+                            location = candidate.sourceLocation,
+                            details = "emitted=${candidate.staticTargetType}, runtimeFallback=${candidate.fallbackType}",
+                            suggestion = "The block must still resolve by name on clients; verify its gameplay and " +
+                                "consider extending the nested object mapping before claiming parity.",
+                        ),
+                    )
+                }
             }
         }
         val decisionDiagnostics = candidates.asSequence()
@@ -499,7 +516,15 @@ object RuntimeStaticHybridCore {
                     options.replaceOfficialUnitFallbackTemplates &&
                     options.officialUnitFallbackTypes.any { it.equals(runtime.fallbackType, ignoreCase = true) }
                 ) && !staticTargetType.equals(runtime.fallbackType, ignoreCase = true)
-            if (!staticTargetType.equals(runtime.fallbackType, ignoreCase = true) && !overrideTemplate) {
+            val fallbackMatch = staticTargetType.equals(runtime.fallbackType, ignoreCase = true)
+            // A curated substitution is an intentional, auditable mapping of a Mod-only class to a
+            // constructible vanilla parser (MindustryJavaMappings.customBlockFallbacks). The emitted
+            // data-pack type does not have to equal the class the Mod instantiated at runtime, and
+            // dropping such a block would leave maps and in-progress build plans referencing a content
+            // name that no client can resolve. Accept it, keep it degraded, and report the substitution.
+            val curatedBlockSubstitution = kind == ContentKind.BLOCK && !fallbackMatch &&
+                staticTargetType in MindustryJavaMappings.customBlockFallbacks.values
+            if (!fallbackMatch && !overrideTemplate && !curatedBlockSubstitution) {
                 reject(
                     "HYBRID_FALLBACK_TYPE_MISMATCH",
                     "Static target '$staticTargetType' does not match runtime fallback '${runtime.fallbackType}'.",

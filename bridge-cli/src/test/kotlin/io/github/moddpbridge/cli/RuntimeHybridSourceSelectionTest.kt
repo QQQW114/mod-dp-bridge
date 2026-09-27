@@ -6,6 +6,7 @@ import io.github.moddpbridge.converter.RuntimePreparedConversion
 import io.github.moddpbridge.converter.RuntimePreparedFileResult
 import io.github.moddpbridge.model.ContentDisposition
 import io.github.moddpbridge.model.ContentKind
+import io.github.moddpbridge.model.MindustryTarget
 import io.github.moddpbridge.model.SourceLocation
 import io.github.moddpbridge.target.v1597.ContentApplyValidationResult
 import java.nio.file.Files
@@ -64,6 +65,7 @@ class RuntimeHybridSourceSelectionTest {
                         gameBuild = 159,
                         gameRevision = 7,
                     ),
+                    target = MindustryTarget.V159_7,
                     modJar = modJar,
                     source = temporary.resolve("source"),
                     sourceIndexReport = sourceIndex,

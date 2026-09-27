@@ -7,6 +7,7 @@ import io.github.moddpbridge.model.ContentDisposition
 import io.github.moddpbridge.model.ContentKind
 import io.github.moddpbridge.model.Diagnostic
 import io.github.moddpbridge.model.DiagnosticSeverity
+import io.github.moddpbridge.model.MindustryTarget
 import io.github.moddpbridge.model.SourceLocation
 import io.github.moddpbridge.model.ValidationStage
 import io.github.moddpbridge.target.v1597.ContentApplyValidationResult
@@ -518,7 +519,10 @@ class RuntimeConversionPipelineTest {
 
         assertEquals(2, result.exitCode)
         assertFalse(called.get())
-        assertTrue(Files.readString(result.report).contains(OfficialMindustry1597ServerJarPolicy.SHA256))
+        val report = Files.readString(result.report)
+        MindustryTarget.accepted.forEach { target ->
+            assertTrue(report.contains(target.serverJarSha256), "report must list the pinned ${target.id} SHA-256")
+        }
     }
 
     @Test
@@ -542,7 +546,9 @@ class RuntimeConversionPipelineTest {
 
         assertEquals(5, result.exitCode)
         assertFalse(mappingCalled.get())
-        assertTrue(Files.readString(result.report).contains("requires the official v159.7 release runtime"))
+        val report = Files.readString(result.report)
+        assertTrue(report.contains("requires the official ${MindustryTarget.V159_7.displayName}"), report)
+        assertTrue(report.contains("\"targetId\""), report)
     }
 
     @Test
@@ -732,6 +738,6 @@ class RuntimeConversionPipelineTest {
     }
 
     private companion object {
-        val ALLOW_TEST_SERVER = RuntimeServerJarPolicy { _, _ -> }
+        val ALLOW_TEST_SERVER = RuntimeServerJarPolicy { _, _ -> MindustryTarget.V159_7 }
     }
 }

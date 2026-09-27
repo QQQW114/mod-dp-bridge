@@ -6,6 +6,7 @@ import io.github.moddpbridge.converter.RuntimePreparedConversion
 import io.github.moddpbridge.converter.RuntimePreparedFileResult
 import io.github.moddpbridge.model.ContentDisposition
 import io.github.moddpbridge.model.ContentKind
+import io.github.moddpbridge.model.MindustryTarget
 import io.github.moddpbridge.model.SourceLocation
 import java.nio.file.Files
 import java.nio.file.Path
@@ -199,11 +200,12 @@ class RuntimeStaticHybridInputsTest {
             .joinToString(",\n") { phase ->
                 "              \"$phase\": {\"sourceClassMapFallback\":{\"parserName\":\"Wall\",\"loadableRoot\":true}}"
             }
+        val target = MindustryTarget.PRIMARY
         return """
         {
           "schemaVersion": 2,
           "targetMod": "fixture",
-          "gameVersion": {"type":"official","modifier":"release","build":159,"revision":7},
+          "gameVersion": {"type":"official","modifier":"release","build":${target.build},"revision":${target.revision}},
           "contents": [{
             "name":"fixture-test-wall",
             "contentType":"block",
@@ -214,6 +216,30 @@ $phases
           }]
         }
         """.trimIndent()
+    }
+
+    @Test
+    fun `snapshot from a non-pinned release is rejected by the hybrid gate`() {
+        val fixture = fixtureInputs()
+        Files.writeString(
+            fixture.snapshot,
+            Files.readString(fixture.snapshot)
+                .replace("\"build\":${MindustryTarget.PRIMARY.build}", "\"build\":159")
+                .replace("\"revision\":${MindustryTarget.PRIMARY.revision}", "\"revision\":7"),
+        )
+
+        val error = assertFailsWith<IllegalArgumentException> {
+            RuntimeStaticHybrid.prepare(
+                RuntimeStaticHybridRequest(
+                    snapshot = fixture.snapshot,
+                    source = fixture.source,
+                    sourceIndexReport = fixture.sourceIndex,
+                    runtimePrepared = fixture.runtime,
+                ),
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains(MindustryTarget.PRIMARY.displayName), error.message)
     }
 
     private fun sourceIndexJson(): String = """

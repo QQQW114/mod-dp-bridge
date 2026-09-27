@@ -9,6 +9,7 @@ import io.github.moddpbridge.model.Diagnostic
 import io.github.moddpbridge.model.DiagnosticSeverity
 import io.github.moddpbridge.model.FileDisposition
 import io.github.moddpbridge.model.FileResult
+import io.github.moddpbridge.model.MindustryTarget
 import io.github.moddpbridge.model.OutputArtifact
 import io.github.moddpbridge.model.OutputArtifactKind
 import io.github.moddpbridge.model.ReportSummary
@@ -39,6 +40,8 @@ data class ConversionRequest(
     val outputBaseName: String? = null,
     val overwrite: Boolean = false,
     val limits: SecurityLimits = SecurityLimits(),
+    /** Pinned Mindustry target this run generates for; drives the archive suffix and report target. */
+    val target: MindustryTarget = MindustryTarget.PRIMARY,
     /** Receives the same ordered messages returned in [ConverterResult.logs]. */
     val logSink: ((String) -> Unit)? = null,
     /** Null discovers deterministic source exporters through ServiceLoader inside the audited run. */
@@ -153,7 +156,7 @@ object BridgeConverter {
             val archiveBase = request.outputBaseName?.let(::safeSlug)
                 ?.takeIf { it.isNotBlank() }
                 ?: plan.slug
-            val dpZip = outputRoot.resolve("$archiveBase-dp-v159.7.zip")
+            val dpZip = outputRoot.resolve("$archiveBase-dp-v${request.target.gameVersion}.zip")
             val reportJson = outputRoot.resolve("report.json")
             val reportMarkdown = outputRoot.resolve("report.md")
 
@@ -186,6 +189,7 @@ object BridgeConverter {
                 diagnostics = diagnostics,
                 outputs = outputs,
                 runtimePrepared = runtime != null,
+                target = request.target,
             )
             Files.writeString(reportJson, ConversionReportJson.encode(report) + "\n", StandardCharsets.UTF_8)
             Files.writeString(reportMarkdown, report.toMarkdown(), StandardCharsets.UTF_8)
@@ -556,6 +560,7 @@ object BridgeConverter {
         diagnostics: List<Diagnostic>,
         outputs: List<OutputArtifact>,
         runtimePrepared: Boolean,
+        target: MindustryTarget,
     ): ConversionReport {
         val infos = diagnostics.count { it.severity == DiagnosticSeverity.INFO }
         val warnings = diagnostics.count { it.severity == DiagnosticSeverity.WARNING }
@@ -592,10 +597,10 @@ object BridgeConverter {
             // Kept deterministic. The caller may add a publication timestamp later.
             generatedAt = null,
             target = TargetDescriptor(
-                id = "mindustry-v159.7",
-                gameVersion = "159.7",
-                commit = "c9686eb5d0ae5dd47ee02c40f99f7d5018ccbc8c",
-                dataPatchFormatVersion = 2,
+                id = "mindustry-v${target.gameVersion}",
+                gameVersion = target.gameVersion,
+                commit = null,
+                dataPatchFormatVersion = target.dataPatchFormatVersion,
                 description = if (runtimePrepared) {
                     "Runtime-observed content mapped to Data Assets; DP runtime validation pending."
                 } else {

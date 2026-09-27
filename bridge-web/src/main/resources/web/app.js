@@ -97,7 +97,7 @@
         maxUploadBytes: null,
         serviceOnline: false,
         runtimeReady: false,
-        runtimeReason: "正在检查官方 v159.7 运行环境…",
+        runtimeReason: "正在检查官方 Mindustry 运行环境…",
         jobGeneration: 0,
     };
 
@@ -121,9 +121,9 @@
     const runtimeReasonPresentation = {
         runtime_execution_disabled: "服务端未启用运行时 Mod 执行",
         runtime_requires_loopback_binding: "运行时模式仅允许绑定本机回环地址",
-        runtime_server_jar_unavailable: "未配置可用的官方 v159.7 Server JAR",
-        runtime_server_jar_unreadable: "官方 v159.7 Server JAR 无法读取",
-        runtime_server_jar_sha256_mismatch: "Server JAR 不是固定哈希的官方 v159.7 版本",
+        runtime_server_jar_unavailable: "未配置可用的官方 Mindustry Server JAR",
+        runtime_server_jar_unreadable: "官方 Mindustry Server JAR 无法读取",
+        runtime_server_jar_sha256_mismatch: "Server JAR 不是任何已钉扎哈希的官方 Mindustry 版本",
     };
 
     const phasePresentation = {
@@ -132,14 +132,14 @@
         reading: "正在读取上传的 Mod",
         scanning: "正在扫描并验证文件",
         detecting: "正在识别输入格式",
-        preflight: "正在检查信任边界与官方 v159.7 环境",
-        "runtime-preflight": "正在检查信任边界与官方 v159.7 环境",
+        preflight: "正在检查信任边界与官方 Mindustry 环境",
+        "runtime-preflight": "正在检查信任边界与官方 Mindustry 环境",
         runtimeExtraction: "正在独立 JVM 中加载 Mod 并提取注册内容",
         "runtime-extraction": "正在独立 JVM 中加载 Mod 并提取注册内容",
         sourceIndex: "正在校验 JAR 与可选源码的对应关系",
         "source-index": "正在校验 JAR 与可选源码的对应关系",
-        runtimeToDpMapping: "正在将运行时 Content 映射为 v159.7 DP 声明",
-        "runtime-mapping": "正在将运行时 Content 映射为 v159.7 DP 声明",
+        runtimeToDpMapping: "正在将运行时 Content 映射为 DP 声明",
+        "runtime-mapping": "正在将运行时 Content 映射为 DP 声明",
         hybridSourceSelection: "正在用 DataPatcher 筛选源码候选内容",
         "hybrid-selection": "正在用 DataPatcher 筛选源码候选内容",
         packaging: "正在打包运行时转换产物",
@@ -152,8 +152,8 @@
         "server-discovery": "正在启动官方服务器扫描 DP 资源",
         dataPatchApply: "正在执行官方 DataPatcher.apply 最终验证",
         "data-patch-apply": "正在执行官方 DataPatcher.apply 最终验证",
-        dpValidation: "正在执行官方 v159.7 DP 最终验证",
-        "dp-validation": "正在执行官方 v159.7 DP 最终验证",
+        dpValidation: "正在执行官方 DP 最终验证",
+        "dp-validation": "正在执行官方 DP 最终验证",
         finalizing: "正在生成报告与诊断",
         cancelling: "正在终止转换进程",
         cancelled: "转换已终止",
@@ -185,7 +185,7 @@
         const reason = String(value ?? "").trim();
         if (!reason) {
             return ready
-                ? "官方 v159.7 / B480 运行时转换环境已就绪。"
+                ? "官方 v160.5 运行时转换环境已就绪。"
                 : "服务器未启用可执行 Mod JAR 的运行时转换。";
         }
         const localized = runtimeReasonPresentation[reason];

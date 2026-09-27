@@ -15,10 +15,12 @@ import picocli.CommandLine.Option
     name = "runtime-convert",
     mixinStandardHelpOptions = true,
     description = [
-        "Execute a trusted built Mod with the pinned official Mindustry server in separate JVMs and map observed Content to a v159.7 data pack.",
+        "Execute a trusted built Mod with the pinned official Mindustry server in separate JVMs and map observed Content to a data pack.",
         "The runtime mapper emits Item, Liquid/CellLiquid and StatusEffect plus exact JAR assets;",
         "when --source is present, runtime/fallback-matched Block and Unit AST candidates are filtered by the official DataPatcher.",
         "Unsupported content and Java-only behavior remain explicit in runtime-mapping.json, hybrid-report.json and report.json.",
+        "Accepted server pins: Mindustry v160.5 (0bd327c6c3d551e7e8fdab7b695517f809baacca3b1f5cb1c1a8dd74836620e0) " +
+            "and v159.7 (e41289c32bcf765eb50fa131e6b515d741e20f7843fb567d3aa949e7461f22ab).",
     ],
 )
 class RuntimeConvertCommand : Callable<Int> {
@@ -44,7 +46,9 @@ class RuntimeConvertCommand : Callable<Int> {
         required = true,
         paramLabel = "JAR",
         description = [
-            "Pinned official Mindustry v159.7 server JAR. Its bytecode is executed while loading the Mod and validating the DP.",
+            "Pinned official Mindustry server JAR. Its bytecode is executed while loading the Mod and validating the DP. " +
+                "Accepted: v160.5 (0bd327c6c3d551e7e8fdab7b695517f809baacca3b1f5cb1c1a8dd74836620e0) and " +
+                "v159.7 (e41289c32bcf765eb50fa131e6b515d741e20f7843fb567d3aa949e7461f22ab).",
         ],
     )
     lateinit var serverJar: Path
@@ -178,6 +182,12 @@ private val RUNTIME_LOG_ARTIFACTS = listOf(
     "runtime-work",
 )
 
+/**
+ * Stale data-pack archives owned by an earlier `--overwrite` run, for any pinned target version.
+ * The suffix carries the target game version (`<mod>-dp-v160.5.zip`), so it must not be hardcoded.
+ */
+private val STALE_RUNTIME_DP_ARCHIVE = Regex("""-dp-v\d+(\.\d+)*\.zip$""", RegexOption.IGNORE_CASE)
+
 /** Clears only artifacts owned by runtime-convert and never follows a symbolic link. */
 internal fun prepareRuntimeOutput(output: Path, overwrite: Boolean) {
     if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
@@ -201,7 +211,7 @@ internal fun prepareRuntimeOutput(output: Path, overwrite: Boolean) {
             entries.forEach { entry ->
                 val name = entry.fileName?.toString().orEmpty()
                 if (
-                    name.endsWith("-dp-v159.7.zip", ignoreCase = true) &&
+                    STALE_RUNTIME_DP_ARCHIVE.containsMatchIn(name) &&
                     (Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(entry))
                 ) {
                     deleteRuntimeArtifact(entry, output)

@@ -11,6 +11,7 @@ import io.github.moddpbridge.model.ConversionReportJson
 import io.github.moddpbridge.model.ConversionStatus
 import io.github.moddpbridge.model.Diagnostic
 import io.github.moddpbridge.model.DiagnosticSeverity
+import io.github.moddpbridge.model.MindustryTarget
 import io.github.moddpbridge.model.SourceLocation
 import io.github.moddpbridge.model.ValidationStage
 import io.github.moddpbridge.model.ValidationStageResult
@@ -81,19 +82,32 @@ internal data class RuntimeInputFingerprints(
     val serverJarSha256: String,
 )
 
+/** Trusted inputs plus the pinned target that the supplied server JAR was matched to. */
+internal data class RuntimePreflightResult(
+    val fingerprints: RuntimeInputFingerprints,
+    val target: MindustryTarget,
+)
+
 internal fun interface RuntimeServerJarPolicy {
-    fun validate(serverJar: Path, sha256: String)
+    /**
+     * @return the pinned [MindustryTarget] that [sha256] belongs to.
+     * Implementations must fail closed (throw) for anything that is not an accepted official release.
+     */
+    fun validate(serverJar: Path, sha256: String): MindustryTarget
 }
 
-internal object OfficialMindustry1597ServerJarPolicy : RuntimeServerJarPolicy {
-    const val SHA256 = "e41289c32bcf765eb50fa131e6b515d741e20f7843fb567d3aa949e7461f22ab"
-
-    override fun validate(serverJar: Path, sha256: String) {
-        require(sha256.equals(SHA256, ignoreCase = true)) {
-            "--server-jar is not the pinned official Mindustry v159.7 release server: $serverJar " +
-                "(expected SHA-256 $SHA256, found $sha256)."
-        }
-    }
+/**
+ * Fail-closed policy over the [MindustryTarget] pins.
+ *
+ * Every pinned official release JAR is accepted; a runtime snapshot is then required to report exactly that
+ * build/revision, so a converted data pack is never validated against an unpinned runtime.
+ */
+internal object PinnedOfficialMindustryServerJarPolicy : RuntimeServerJarPolicy {
+    override fun validate(serverJar: Path, sha256: String): MindustryTarget =
+        MindustryTarget.bySha256(sha256) ?: throw IllegalArgumentException(
+            "--server-jar is not a pinned official Mindustry release server: $serverJar " +
+                "(found SHA-256 $sha256; pinned builds: ${MindustryTarget.pinnedDescription()}).",
+        )
 }
 
 internal fun interface RuntimeStructuralValidationRunner {
@@ -119,6 +133,8 @@ internal fun interface RuntimeDataPatchApplyRunner {
  */
 internal data class RuntimeToDpMappingInput(
     val snapshot: RuntimeSnapshotDescriptor,
+    /** Pinned build the snapshot must have been captured from; never inferred from the snapshot itself. */
+    val target: MindustryTarget,
     val modJar: Path,
     val sourceIndexReport: Path?,
     val outputDirectory: Path,
@@ -187,7 +203,7 @@ internal class RuntimeConversionPipeline(
     private val extractor: RuntimeExtractorRunner = RuntimeExtractorProcess(),
     private val sourceIndexStage: RuntimeSourceIndexStage = JarRuntimeSourceIndexStage(),
     private val mappingStage: RuntimeToDpMappingStage = RuntimeSnapshotV2MappingStage,
-    private val serverJarPolicy: RuntimeServerJarPolicy = OfficialMindustry1597ServerJarPolicy,
+    private val serverJarPolicy: RuntimeServerJarPolicy = PinnedOfficialMindustryServerJarPolicy,
     private val structuralValidator: RuntimeStructuralValidationRunner = RuntimeStructuralValidationRunner { dpZip ->
         Mindustry1597StructuralValidator().validate(dpZip)
     },
@@ -253,19 +269,25 @@ internal class RuntimeConversionPipeline(
             )
         }
 
-        try {
-            val verified = preflight(request)
-            fingerprints = verified
-            stages += RuntimePipelineStageRecord(
-                stage = RuntimePipelineStage.PREFLIGHT,
-                status = RuntimePipelineStageStatus.PASSED,
-                summary = "Trusted local runtime inputs and explicit execution consent were validated.",
-                metadata = mapOf(
-                    "modJarSha256" to verified.modJarSha256,
-                    "serverJarSha256" to verified.serverJarSha256,
-                    "serverJarPolicy" to "official-v159.7-pinned-sha256",
-                ),
-            )
+        val preflight = try {
+            preflight(request).also { verified ->
+                fingerprints = verified.fingerprints
+                stages += RuntimePipelineStageRecord(
+                    stage = RuntimePipelineStage.PREFLIGHT,
+                    status = RuntimePipelineStageStatus.PASSED,
+                    summary = "Trusted local runtime inputs and explicit execution consent were validated " +
+                        "against the pinned official ${verified.target.displayName} release.",
+                    metadata = mapOf(
+                        "modJarSha256" to verified.fingerprints.modJarSha256,
+                        "serverJarSha256" to verified.fingerprints.serverJarSha256,
+                        "serverJarPolicy" to "pinned-official-release-sha256",
+                        "targetId" to verified.target.id,
+                        "targetBuild" to verified.target.build.toString(),
+                        "targetRevision" to verified.target.revision.toString(),
+                        "dataPatchFormatVersion" to verified.target.dataPatchFormatVersion.toString(),
+                    ),
+                )
+            }
         } catch (error: Throwable) {
             logger.error("Runtime conversion preflight failed: ${error.message}")
             stages += RuntimePipelineStageRecord(
@@ -275,6 +297,7 @@ internal class RuntimeConversionPipeline(
             )
             return complete("failed", EXIT_PREFLIGHT, error.stackTraceToString())
         }
+        val pinnedTarget = preflight.target
 
         logger.info("Starting isolated runtime extraction. Supplied Mod bytecode will execute in a child JVM.")
         extractorResult = try {
@@ -359,10 +382,11 @@ internal class RuntimeConversionPipeline(
         if (
             !snapshot.gameType.equals("official", ignoreCase = true) ||
             !snapshot.gameModifier.equals("release", ignoreCase = true) ||
-            snapshot.gameBuild != 159 || snapshot.gameRevision != 7
+            snapshot.gameBuild != pinnedTarget.build || snapshot.gameRevision != pinnedTarget.revision
         ) {
-            val summary = "The runtime mapper requires the official v159.7 release runtime, but extraction reported " +
-                "type=${snapshot.gameType ?: "unknown"}, modifier=${snapshot.gameModifier ?: "unknown"}, " +
+            val summary = "The runtime mapper requires the official ${pinnedTarget.displayName} release runtime, " +
+                "but extraction reported type=${snapshot.gameType ?: "unknown"}, " +
+                "modifier=${snapshot.gameModifier ?: "unknown"}, " +
                 "build=${snapshot.gameBuild ?: "unknown"}, revision=${snapshot.gameRevision ?: "unknown"}."
             logger.error(summary)
             stages += RuntimePipelineStageRecord(
@@ -370,7 +394,11 @@ internal class RuntimeConversionPipeline(
                 RuntimePipelineStageStatus.FAILED,
                 summary,
                 listOf(snapshot.path),
-                mapOf("requiredBuild" to "159", "requiredRevision" to "7"),
+                mapOf(
+                    "requiredBuild" to pinnedTarget.build.toString(),
+                    "requiredRevision" to pinnedTarget.revision.toString(),
+                    "targetId" to pinnedTarget.id,
+                ),
             )
             return complete("failed", EXIT_MAPPING)
         }
@@ -444,6 +472,7 @@ internal class RuntimeConversionPipeline(
             mappingStage.map(
                 RuntimeToDpMappingInput(
                     snapshot = snapshot,
+                    target = pinnedTarget,
                     modJar = request.modJar,
                     sourceIndexReport = sourceIndex?.report,
                     outputDirectory = output,
@@ -509,6 +538,7 @@ internal class RuntimeConversionPipeline(
                     val hybrid = RuntimeHybridSourceSelector(dataPatchApplyValidator).run(
                         RuntimeHybridSourceSelectionInput(
                             snapshot = snapshot,
+                            target = pinnedTarget,
                             modJar = request.modJar,
                             source = request.source,
                             sourceIndexReport = sourceIndex.report,
@@ -595,6 +625,7 @@ internal class RuntimeConversionPipeline(
                     outputDirectory = output,
                     outputBaseName = request.modJar.fileName.toString().substringBeforeLast('.'),
                     overwrite = true,
+                    target = pinnedTarget,
                     limits = SecurityLimits(
                         maxInputBytes = 512L * 1024L * 1024L,
                         maxEntries = 100_000,
@@ -854,7 +885,7 @@ internal class RuntimeConversionPipeline(
                 it.stage == ValidationStage.STRUCTURE && it.status == ValidationStatus.FAILED
             }
 
-    private fun preflight(request: RuntimeConversionPipelineRequest): RuntimeInputFingerprints {
+    private fun preflight(request: RuntimeConversionPipelineRequest): RuntimePreflightResult {
         require(request.allowModExecution) {
             "Runtime execution was not acknowledged; pass --allow-mod-execution only when both the Mod and Server JAR are trusted."
         }
@@ -880,8 +911,8 @@ internal class RuntimeConversionPipeline(
             modJarSha256 = sha256(request.modJar),
             serverJarSha256 = sha256(request.serverJar),
         )
-        serverJarPolicy.validate(request.serverJar, fingerprints.serverJarSha256)
-        return fingerprints
+        val target = serverJarPolicy.validate(request.serverJar, fingerprints.serverJarSha256)
+        return RuntimePreflightResult(fingerprints, target)
     }
 
     private fun verifyInputFingerprints(

@@ -64,8 +64,22 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$expectedServerSha256 = 'E41289C32BCF765EB50FA131E6B515D741E20F7843FB567D3AA949E7461F22AB'
-$defaultServerJar = 'work/mindustry-v159.7-server-release.jar'
+
+# Pinned official Mindustry releases accepted by the runtime mode, primary first.
+# Keep in sync with MindustryTarget in bridge-model.
+$pinnedServerJars = @(
+    [pscustomobject]@{
+        Version = '160.5'
+        Sha256  = '0BD327C6C3D551E7E8FDAB7B695517F809BAACCA3B1F5CB1C1A8DD74836620E0'
+        Name    = 'mindustry-v160.5-server-release.jar'
+    },
+    [pscustomobject]@{
+        Version = '159.7'
+        Sha256  = 'E41289C32BCF765EB50FA131E6B515D741E20F7843FB567D3AA949E7461F22AB'
+        Name    = 'mindustry-v159.7-server-release.jar'
+    }
+)
+$defaultServerJar = "work/$($pinnedServerJars[0].Name)"
 
 function Get-LiteralFileSha256([string] $Path) {
     $algorithm = [System.Security.Cryptography.SHA256]::Create()
@@ -96,9 +110,12 @@ function Assert-ServerJar([string] $Path) {
 
     $validated = $serverItem.FullName
     $actualHash = Get-LiteralFileSha256 $validated
-    if ($actualHash -ne $expectedServerSha256) {
-        throw "Mindustry Server SHA-256 mismatch. Expected $expectedServerSha256 but found $actualHash."
+    $match = $pinnedServerJars | Where-Object { $_.Sha256 -eq $actualHash } | Select-Object -First 1
+    if ($null -eq $match) {
+        $expected = ($pinnedServerJars | ForEach-Object { "v$($_.Version) $($_.Sha256)" }) -join '; '
+        throw "Mindustry Server SHA-256 mismatch. Pinned builds: $expected. Found $actualHash."
     }
+    Write-Verbose "Matched pinned official Mindustry v$($match.Version) server JAR."
     return $validated
 }
 
@@ -162,12 +179,18 @@ if ($NoRuntime) {
 } elseif (-not [string]::IsNullOrWhiteSpace($ServerJar)) {
     $validatedServerPath = Assert-ServerJar $ServerJar
 } else {
-    $defaultPath = Join-Path $applicationRoot $defaultServerJar
-    if (Test-Path -LiteralPath $defaultPath -PathType Leaf) {
-        Write-Host "[mod-dp-bridge] Probing default runtime Server JAR: $defaultPath" -ForegroundColor DarkGray
-        $validatedServerPath = Assert-ServerJar $defaultPath
-    } else {
-        Write-Host "[mod-dp-bridge] Default runtime Server JAR not found: $defaultPath" -ForegroundColor Yellow
+    $probed = @()
+    foreach ($candidate in $pinnedServerJars) {
+        $candidatePath = Join-Path $applicationRoot "work/$($candidate.Name)"
+        if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+            Write-Host "[mod-dp-bridge] Probing pinned runtime Server JAR v$($candidate.Version): $candidatePath" -ForegroundColor DarkGray
+            $validatedServerPath = Assert-ServerJar $candidatePath
+            break
+        }
+        $probed += "work/$($candidate.Name)"
+    }
+    if ($null -eq $validatedServerPath) {
+        Write-Host "[mod-dp-bridge] No pinned runtime Server JAR found (looked for: $($probed -join ', '))." -ForegroundColor Yellow
         Write-Host '[mod-dp-bridge] Falling back to static conversion. Pass -ServerJar to enable runtime extraction, or use -NoRuntime to keep it disabled.' -ForegroundColor Yellow
     }
 }

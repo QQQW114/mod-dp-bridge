@@ -9,6 +9,9 @@ internal object MindustryJavaMappings {
         "GasTurbineGenerator" to "ConsumeGenerator",
         "PressureDrill" to "Drill",
         "SFCore" to "CoreBlock",
+        // Extends Wall at runtime; a data pack can carry the shared Wall fields, while the
+        // memory-growth build behaviour stays unreproducible and is reported as degraded.
+        "MemoryWall" to "Wall",
     )
 
     val customBulletFallbacks: Map<String, String> = mapOf(
@@ -27,6 +30,9 @@ internal object MindustryJavaMappings {
         "GasTurbineGenerator" to setOf("extraPower", "powerUpSpeed"),
         "PressureDrill" to setOf("maxFactor", "minPowerNeed"),
         "SFCore" to setOf("maxNumber"),
+        // MemoryWall extends Wall and grows armor on hit; those fields exist only on the Mod class,
+        // so the curated Wall substitution must drop them instead of emitting parser warnings.
+        "MemoryWall" to setOf("hitArmorUp", "maxArmor", "regenDelay", "regenAmount", "regenPercent", "charge", "basicArmor"),
     )
 
     /**
@@ -260,7 +266,11 @@ internal object MindustryJavaMappings {
         "DrawLiquidTile" -> listOf("drawLiquid", "padding")
         "DrawWarmupRegion" -> listOf("suffix")
         "WrapEffect" -> listOf("effect", "color", "rotation")
-        "RadialEffect" -> listOf("effect", "amount", "spacing", "rotationOffset")
+        // Field names must follow the constructor parameter order of the target release, not the
+        // parameter names: RadialEffect's 3rd parameter is named `spacing` but writes
+        // `rotationSpacing`, its 4th is `lengthOffset` and its 5th `effectRotationOffset`
+        // (verified against the pinned v160.5 release source).
+        "RadialEffect" -> listOf("effect", "amount", "rotationSpacing", "lengthOffset", "effectRotationOffset")
         "BasicBulletType", "MissileBulletType", "ArtilleryBulletType", "FlakBulletType",
         "PointBulletType", "EmpBulletType", "PowerupBullet", "ShieldBreakBullet", "SizeDamageBullet" ->
             listOf("speed", "damage", "sprite")

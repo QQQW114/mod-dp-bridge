@@ -1,5 +1,6 @@
 package io.github.moddpbridge.web
 
+import io.github.moddpbridge.model.MindustryTarget
 import java.net.InetSocketAddress
 import java.net.InetAddress
 import java.io.File
@@ -119,7 +120,7 @@ data class WebConfig(
             }
             val digest = runCatching { sha256(serverJar) }.getOrNull()
                 ?: return false to "runtime_server_jar_unreadable"
-            if (!digest.equals(OFFICIAL_MINDUSTRY_1597_SERVER_SHA256, ignoreCase = true)) {
+            if (MindustryTarget.bySha256(digest) == null) {
                 return false to "runtime_server_jar_sha256_mismatch"
             }
             return true to null
@@ -169,7 +170,12 @@ data class WebConfig(
             return candidate.trim().trimEnd('.').lowercase().takeIf(String::isNotEmpty)
         }
 
-        internal const val OFFICIAL_MINDUSTRY_1597_SERVER_SHA256 =
-            "e41289c32bcf765eb50fa131e6b515d741e20f7843fb567d3aa949e7461f22ab"
+        /**
+         * Pinned official Mindustry releases accepted by the Web runtime mode.
+         *
+         * The single source of truth is [MindustryTarget]; this list only mirrors it for the UI/diagnostics.
+         */
+        internal val PINNED_MINDUSTRY_SERVER_SHA256: List<String> =
+            MindustryTarget.accepted.map { it.serverJarSha256 }
     }
 }
