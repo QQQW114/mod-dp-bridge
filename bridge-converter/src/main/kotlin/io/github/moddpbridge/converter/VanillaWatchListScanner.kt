@@ -19,6 +19,11 @@ data class VanillaWatchList(
     val diagnostics: List<Diagnostic> = emptyList(),
     val scannedJavaFiles: Int = 0,
     val truncatedTypes: List<String> = emptyList(),
+    /**
+     * Source files that produced the watch list. The patch derived from these overrides keeps them as
+     * its release-JAR provenance, after the reader rewrites `.java` to the packaged class entry.
+     */
+    val sourceFiles: List<String> = emptyList(),
 ) {
     /** Canonical `type:name,name;type:name` form consumed by the runtime extractor. */
     val spec: String
@@ -59,18 +64,22 @@ object VanillaWatchListScanner {
         val diagnostics = mutableListOf<Diagnostic>()
         val snapshot = SafeSourceReader.read(source, limits, ConverterLogger(null), diagnostics)
         val found = CONTENT_TYPES.associateWith { linkedSetOf<String>() }.toMutableMap()
+        val sourcesWithReferences = linkedSetOf<String>()
         var javaFiles = 0
         for (entry in snapshot.entries) {
             if (entry.extension != "java") continue
             javaFiles++
             val text = String(entry.bytes, StandardCharsets.UTF_8)
+            var referenced = false
             for (line in text.lineSequence()) {
                 if (wildcardImport.matches(line)) continue
                 for (match in reference.findAll(line)) {
                     val type = declarations[match.groupValues[1]] ?: continue
                     found.getValue(type).add(match.groupValues[2])
+                    referenced = true
                 }
             }
+            if (referenced) sourcesWithReferences += entry.path
         }
 
         val truncatedTypes = mutableListOf<String>()
@@ -118,6 +127,7 @@ object VanillaWatchListScanner {
             diagnostics = diagnostics,
             scannedJavaFiles = javaFiles,
             truncatedTypes = truncatedTypes,
+            sourceFiles = sourcesWithReferences.sorted(),
         )
     }
 }

@@ -157,6 +157,7 @@ internal class ConversionJob(
     val source: Path? = null,
     val sourceOriginalFileName: String? = null,
     val executionAcknowledged: Boolean = false,
+    val vanillaOverrides: Boolean = true,
     private val redactor: WebOutputRedactor = WebOutputRedactor(),
 ) {
     val outputDirectory: Path = root.resolve("output")
@@ -551,6 +552,7 @@ internal class JobManager(private val config: WebConfig) : AutoCloseable {
             source = upload.source?.path,
             sourceOriginalFileName = upload.source?.originalName,
             executionAcknowledged = upload.executionAcknowledged,
+            vanillaOverrides = upload.vanillaOverrides,
             redactor = WebOutputRedactor(config.serverJar, reservation.root),
         )
         val cancelled = synchronized(reservationLock) {
@@ -742,6 +744,8 @@ internal class JobManager(private val config: WebConfig) : AutoCloseable {
                 add(config.serverTimeoutSeconds.toString())
                 add("--hybrid-max-rounds")
                 add(config.hybridMaxRounds.toString())
+                add("--vanilla-overrides")
+                add(if (job.vanillaOverrides) "on" else "off")
             }
         }
     }

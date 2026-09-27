@@ -70,8 +70,13 @@ final class VanillaOverrideExporter {
     /** One watched target content entry with its exported overrides. */
     record ContentOverride(
         String contentType,
+        /** Name as the Mod source referenced it, i.e. the target declaration field name. */
         String name,
+        /** Name the target registry uses; this is what a Data Patch must address. */
+        String runtimeName,
         String runtimeClass,
+        /** How the watch name was resolved: REGISTRY_NAME, DECLARATION_FIELD or KEBAB_NAME. */
+        String resolution,
         List<FieldOverride> overrides
     ) {
     }
@@ -103,7 +108,7 @@ final class VanillaOverrideExporter {
     private record Key(String contentType, String name) {
     }
 
-    private record ContentRow(String runtimeClass, Map<String, String> fields) {
+    private record ContentRow(String runtimeName, String runtimeClass, String resolution, Map<String, String> fields) {
     }
 
     private record Phase(String name, String spec, Map<Key, ContentRow> contents, List<MissingTarget> missing) {
@@ -210,7 +215,14 @@ final class VanillaOverrideExporter {
                 ));
             }
             if (overrides.isEmpty()) continue;
-            contents.add(new ContentOverride(key.contentType(), key.name(), finalRow.runtimeClass(), overrides));
+            contents.add(new ContentOverride(
+                key.contentType(),
+                key.name(),
+                finalRow.runtimeName(),
+                finalRow.runtimeClass(),
+                finalRow.resolution(),
+                overrides
+            ));
         }
 
         if (watchedFields == 0) {
@@ -247,7 +259,9 @@ final class VanillaOverrideExporter {
             json.append("    {\n");
             append(json, 3, "contentType", quote(content.contentType()), true);
             append(json, 3, "name", quote(content.name()), true);
+            append(json, 3, "runtimeName", quote(content.runtimeName()), true);
             append(json, 3, "runtimeClass", quote(content.runtimeClass()), true);
+            append(json, 3, "resolution", quote(content.resolution()), true);
             json.append("      \"overrides\": [");
             if (!content.overrides().isEmpty()) json.append('\n');
             for (int fieldIndex = 0; fieldIndex < content.overrides().size(); fieldIndex++) {
@@ -323,24 +337,36 @@ final class VanillaOverrideExporter {
                 case "header" -> {
                     requireColumns(file, line, columns, 4);
                     declaredPhase = columns[2];
-                    spec = decode(columns[3]);
+                    spec = decodeColumn(file, line, columns[3]);
                 }
                 case "content" -> {
-                    requireColumns(file, line, columns, 4);
-                    Key key = new Key(columns[1], decode(columns[2]));
-                    contents.put(key, new ContentRow(decode(columns[3]), new TreeMap<>()));
+                    requireColumns(file, line, columns, 6);
+                    Key key = new Key(columns[1], decodeColumn(file, line, columns[2]));
+                    contents.put(key, new ContentRow(
+                        decodeColumn(file, line, columns[3]),
+                        decodeColumn(file, line, columns[4]),
+                        decodeColumn(file, line, columns[5]),
+                        new TreeMap<>()
+                    ));
                 }
                 case "field" -> {
                     requireColumns(file, line, columns, 5);
-                    ContentRow row = contents.get(new Key(columns[1], decode(columns[2])));
+                    ContentRow row = contents.get(new Key(columns[1], decodeColumn(file, line, columns[2])));
                     if (row == null) {
                         throw new IOException("Vanilla watch field row precedes its content row in " + file + ": " + line);
                     }
-                    row.fields().put(decode(columns[3]), decode(columns[4]));
+                    row.fields().put(
+                        decodeColumn(file, line, columns[3]),
+                        decodeColumn(file, line, columns[4])
+                    );
                 }
                 case "missing" -> {
                     requireColumns(file, line, columns, 4);
-                    missing.add(new MissingTarget(columns[1], decode(columns[2]), decode(columns[3])));
+                    missing.add(new MissingTarget(
+                        columns[1],
+                        decodeColumn(file, line, columns[2]),
+                        decodeColumn(file, line, columns[3])
+                    ));
                 }
                 default -> throw new IOException("Unknown vanilla watch row marker in " + file + ": " + line);
             }
@@ -368,6 +394,18 @@ final class VanillaOverrideExporter {
 
     private static String decode(String value) {
         return new String(Base64.getUrlDecoder().decode(value), StandardCharsets.UTF_8);
+    }
+
+    /** Decodes one column, keeping the failing row visible instead of surfacing a bare decoder error. */
+    private static String decodeColumn(Path file, String line, String value) throws IOException {
+        try {
+            return decode(value);
+        } catch (IllegalArgumentException error) {
+            throw new IOException(
+                "Vanilla watch row in " + file + " has a column that is not Base64URL text: " + line,
+                error
+            );
+        }
     }
 
     private static void append(StringBuilder json, int indent, String name, String value, boolean comma) {

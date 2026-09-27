@@ -29,6 +29,7 @@ internal data class ConversionUpload(
     val input: UploadedFile,
     val source: UploadedFile? = null,
     val executionAcknowledged: Boolean = false,
+    val vanillaOverrides: Boolean = true,
 )
 
 internal class UploadException(val statusCode: Int, message: String) : Exception(message)
@@ -39,13 +40,15 @@ internal object MultipartUpload {
     private const val FIELD_SOURCE = "source"
     private const val FIELD_MODE = "mode"
     private const val FIELD_EXECUTION_ACK = "allowModExecution"
+    private const val FIELD_VANILLA_OVERRIDES = "vanillaOverrides"
     private val FILE_FIELDS = setOf(FIELD_STATIC_FILE, FIELD_MOD_JAR, FIELD_SOURCE)
     private val STATIC_EXTENSIONS = setOf("zip", "jar", "hjson", "json", "json5")
     private const val MAX_HEADER_LINE = 16 * 1024
     private const val MAX_HEADER_BYTES = 64 * 1024
     private const val MAX_MULTIPART_OVERHEAD = 1024L * 1024L
     private const val MAX_TEXT_FIELD_BYTES = 256L
-    private const val MAX_PARTS = 4
+    // Runtime conversion sends mode, modJar, optional source, allowModExecution and vanillaOverrides.
+    private const val MAX_PARTS = 5
 
     fun receive(exchange: HttpExchange, inputDirectory: Path, maxFileBytes: Long): ConversionUpload {
         val contentType = exchange.requestHeaders.getFirst("Content-Type")
@@ -148,7 +151,16 @@ internal object MultipartUpload {
                             "Runtime conversion requires allowModExecution=true after acknowledging that uploaded code will execute unsandboxed.",
                         )
                     }
-                    ConversionUpload(mode, modJar, files[FIELD_SOURCE], executionAcknowledged = true)
+                    // Absent means "keep the converter default", which is to reproduce the Mod's changes
+                    // to target content; only an explicit false disables it.
+                    val vanillaOverrides = !textFields[FIELD_VANILLA_OVERRIDES].equals("false", ignoreCase = true)
+                    ConversionUpload(
+                        mode,
+                        modJar,
+                        files[FIELD_SOURCE],
+                        executionAcknowledged = true,
+                        vanillaOverrides = vanillaOverrides,
+                    )
                 }
             }
         } catch (error: Throwable) {
@@ -159,7 +171,7 @@ internal object MultipartUpload {
 
     private fun canonicalField(value: String): String? = when (value) {
         FIELD_STATIC_FILE -> FIELD_STATIC_FILE
-        FIELD_MOD_JAR, FIELD_SOURCE, FIELD_MODE, FIELD_EXECUTION_ACK -> value
+        FIELD_MOD_JAR, FIELD_SOURCE, FIELD_MODE, FIELD_EXECUTION_ACK, FIELD_VANILLA_OVERRIDES -> value
         else -> null
     }
 

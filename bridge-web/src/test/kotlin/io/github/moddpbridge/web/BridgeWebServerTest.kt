@@ -240,6 +240,7 @@ class BridgeWebServerTest {
                 boundary,
                 TestPart("mode", null, "runtime".toByteArray(StandardCharsets.UTF_8)),
                 TestPart("allowModExecution", null, "true".toByteArray(StandardCharsets.UTF_8)),
+                TestPart("vanillaOverrides", null, "true".toByteArray(StandardCharsets.UTF_8)),
                 TestPart("modJar", "ExampleMod.jar", byteArrayOf(0x50, 0x4b, 1, 2, 3)),
                 TestPart("source", "ExampleMod-source.zip", byteArrayOf(0x50, 0x4b, 4, 5, 6)),
             )
@@ -266,6 +267,8 @@ class BridgeWebServerTest {
             assertTrue("--allow-mod-execution" in arguments)
             assertTrue("--runtime-timeout" in arguments)
             assertTrue("--hybrid-max-rounds" in arguments)
+            assertTrue("--vanilla-overrides" in arguments)
+            assertEquals("on", arguments[arguments.indexOf("--vanilla-overrides") + 1])
             assertEquals(serverJar.toString(), arguments[arguments.indexOf("--server-jar") + 1])
 
             val result = getBytes(base.resolve("api/jobs/$id/download/result"))

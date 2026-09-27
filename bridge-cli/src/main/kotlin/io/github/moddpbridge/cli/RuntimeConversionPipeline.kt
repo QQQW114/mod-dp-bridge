@@ -1097,7 +1097,11 @@ internal class RuntimeConversionPipeline(
         return try {
             val mapped = VanillaOverridePatchMapper.map(
                 artifact,
-                VanillaOverrideMappingOptions(migratedContentNames = migratedContent),
+                VanillaOverrideMappingOptions(
+                    migratedContentNames = migratedContent,
+                    modJar = request.modJar,
+                    provenanceSources = watch.sourceFiles,
+                ),
             )
             mapped.diagnostics.forEach(logger::diagnostic)
             if (mapped.summary.patchedFields == 0) {
@@ -1127,7 +1131,7 @@ internal class RuntimeConversionPipeline(
             prepared.copy(
                 files = prepared.files + RuntimePreparedFile(
                     outputPath = mapped.patchPath,
-                    sourcePaths = emptyList(),
+                    sourcePaths = mapped.provenance,
                     bytes = mapped.patchBytes,
                     reason = "Generated from runtime-observed changes to target content.",
                 ),

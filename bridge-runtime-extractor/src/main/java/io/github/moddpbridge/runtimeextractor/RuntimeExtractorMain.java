@@ -173,58 +173,25 @@ public final class RuntimeExtractorMain {
         ).toString();
         String classPath = System.getProperty("java.class.path") +
             System.getProperty("path.separator") + serverJar.toAbsolutePath().normalize();
-        List<String> command = new ArrayList<>(List.of(
+        List<String> command = buildWorkerCommand(
             javaExecutable,
-            "-Xms64m",
-            "-Xmx" + maxHeapMib + "m",
-            "-Djava.awt.headless=true",
-            "-Dfile.encoding=UTF-8",
-            "-Dstdout.encoding=UTF-8",
-            "-Dstderr.encoding=UTF-8",
-            "-Dmoddpbridge.runtimeTargetMod=" + modId,
-            "-Dmoddpbridge.runtimeTraceFile=" + traceFile,
-            "-Dmoddpbridge.runtimePhaseFile=" + phaseFile,
-            "-Dmoddpbridge.runtimeTrackerStatusFile=" + trackerStatusFile,
-            "-Dmoddpbridge.runtimePreContentInitSnapshotFile=" + preContentInitSnapshotFile,
-            "-Dmoddpbridge.runtimePostContentInitSnapshotFile=" + postContentInitSnapshotFile,
-            "-Dmoddpbridge.runtimeFinalSnapshotFile=" + finalSnapshotFile,
-            "-Dmoddpbridge.runtimeMaxSnapshotBytes=" + maxSnapshotBytes,
-            "-cp",
             classPath,
-            RuntimeExtractorMain.class.getName(),
-            "worker",
-            "--output",
-            output.toString(),
-            "--mod-id",
+            maxHeapMib,
             modId,
-            "--input-mod-jar",
-            modJar.toAbsolutePath().normalize().toString(),
-            "--trace-file",
-            traceFile.toString(),
-            "--phase-file",
-            phaseFile.toString(),
-            "--tracker-status-file",
-            trackerStatusFile.toString(),
-            "--pre-content-init-snapshot-file",
-            preContentInitSnapshotFile.toString(),
-            "--post-content-init-snapshot-file",
-            postContentInitSnapshotFile.toString(),
-            "--final-snapshot-file",
-            finalSnapshotFile.toString(),
-            "--max-snapshot-bytes",
-            Long.toString(maxSnapshotBytes)
-        ));
-        if (watchRequested) {
-            command.add("-Dmoddpbridge.runtimeVanillaWatch=" + watchSpec);
-            command.add("-Dmoddpbridge.runtimeVanillaPhaseFile=" + vanillaPhaseMarkerFile);
-            for (String phase : VanillaOverrideExporter.PHASES) {
-                command.add(vanillaPropertyName(phase) + "=" + vanillaPhaseFile(vanillaDirectory, phase));
-            }
-            command.add("--vanilla-dir");
-            command.add(vanillaDirectory.toString());
-            command.add("--vanilla-overrides-output");
-            command.add(vanillaOverridesOutput.toString());
-        }
+            output,
+            modJar,
+            traceFile,
+            phaseFile,
+            trackerStatusFile,
+            preContentInitSnapshotFile,
+            postContentInitSnapshotFile,
+            finalSnapshotFile,
+            maxSnapshotBytes,
+            watchRequested ? watchSpec : null,
+            vanillaDirectory,
+            vanillaPhaseMarkerFile,
+            vanillaOverridesOutput
+        );
         Files.writeString(commandLog, renderCommand(command) + System.lineSeparator(), StandardCharsets.UTF_8);
 
         System.out.println("Runtime extraction WILL execute Mod code in a child JVM.");
@@ -792,6 +759,90 @@ public final class RuntimeExtractorMain {
     }
 
     /**
+     * Builds the child-JVM command line that runs the Mindustry worker.
+     *
+     * <p>Split out of {@link #launch} because ordering is load-bearing: every {@code -D} option belongs
+     * before {@code -cp}, while worker options belong after the main class. Passing a system property in
+     * the worker-option region makes the worker reject it as an unexpected argument.</p>
+     */
+    static List<String> buildWorkerCommand(
+        String javaExecutable,
+        String classPath,
+        long maxHeapMib,
+        String modId,
+        Path output,
+        Path modJar,
+        Path traceFile,
+        Path phaseFile,
+        Path trackerStatusFile,
+        Path preContentInitSnapshotFile,
+        Path postContentInitSnapshotFile,
+        Path finalSnapshotFile,
+        long maxSnapshotBytes,
+        String watchSpec,
+        Path vanillaDirectory,
+        Path vanillaPhaseMarkerFile,
+        Path vanillaOverridesOutput
+    ) {
+        List<String> command = new ArrayList<>(List.of(
+            javaExecutable,
+            "-Xms64m",
+            "-Xmx" + maxHeapMib + "m",
+            "-Djava.awt.headless=true",
+            "-Dfile.encoding=UTF-8",
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
+            "-Dmoddpbridge.runtimeTargetMod=" + modId,
+            "-Dmoddpbridge.runtimeTraceFile=" + traceFile,
+            "-Dmoddpbridge.runtimePhaseFile=" + phaseFile,
+            "-Dmoddpbridge.runtimeTrackerStatusFile=" + trackerStatusFile,
+            "-Dmoddpbridge.runtimePreContentInitSnapshotFile=" + preContentInitSnapshotFile,
+            "-Dmoddpbridge.runtimePostContentInitSnapshotFile=" + postContentInitSnapshotFile,
+            "-Dmoddpbridge.runtimeFinalSnapshotFile=" + finalSnapshotFile,
+            "-Dmoddpbridge.runtimeMaxSnapshotBytes=" + maxSnapshotBytes
+        ));
+        boolean watching = watchSpec != null && !watchSpec.isBlank();
+        if (watching) {
+            command.add("-Dmoddpbridge.runtimeVanillaWatch=" + watchSpec);
+            command.add("-Dmoddpbridge.runtimeVanillaPhaseFile=" + vanillaPhaseMarkerFile);
+            for (String phase : VanillaOverrideExporter.PHASES) {
+                command.add(vanillaPropertyOption(phase) + "=" + vanillaPhaseFile(vanillaDirectory, phase));
+            }
+        }
+        command.add("-cp");
+        command.add(classPath);
+        command.add(RuntimeExtractorMain.class.getName());
+        command.add("worker");
+        command.add("--output");
+        command.add(output.toString());
+        command.add("--mod-id");
+        command.add(modId);
+        command.add("--input-mod-jar");
+        command.add(modJar.toAbsolutePath().normalize().toString());
+        command.add("--trace-file");
+        command.add(traceFile.toString());
+        command.add("--phase-file");
+        command.add(phaseFile.toString());
+        command.add("--tracker-status-file");
+        command.add(trackerStatusFile.toString());
+        command.add("--pre-content-init-snapshot-file");
+        command.add(preContentInitSnapshotFile.toString());
+        command.add("--post-content-init-snapshot-file");
+        command.add(postContentInitSnapshotFile.toString());
+        command.add("--final-snapshot-file");
+        command.add(finalSnapshotFile.toString());
+        command.add("--max-snapshot-bytes");
+        command.add(Long.toString(maxSnapshotBytes));
+        if (watching) {
+            command.add("--vanilla-dir");
+            command.add(vanillaDirectory.toString());
+            command.add("--vanilla-overrides-output");
+            command.add(vanillaOverridesOutput.toString());
+        }
+        return command;
+    }
+
+    /**
      * Canonical file name of one vanilla watch phase. The launcher derives probe system properties from
      * this rule and the worker reads the same files back, so both sides must share it.
      */
@@ -799,12 +850,12 @@ public final class RuntimeExtractorMain {
         return directory.resolve("vanilla-" + phase.toLowerCase(Locale.ROOT).replace('_', '-') + ".tsv");
     }
 
-    private static String vanillaPropertyName(String phase) {
+    private static String vanillaPropertyOption(String phase) {
         return switch (phase) {
-            case VanillaOverrideExporter.BEFORE_MOD_CONTENT -> "moddpbridge.runtimeVanillaBeforeModContentFile";
-            case VanillaOverrideExporter.PRE_CONTENT_INIT -> "moddpbridge.runtimeVanillaPreContentInitFile";
-            case VanillaOverrideExporter.POST_CONTENT_INIT -> "moddpbridge.runtimeVanillaPostContentInitFile";
-            case VanillaOverrideExporter.FINAL_AFTER_MOD_INIT -> "moddpbridge.runtimeVanillaFinalFile";
+            case VanillaOverrideExporter.BEFORE_MOD_CONTENT -> "-Dmoddpbridge.runtimeVanillaBeforeModContentFile";
+            case VanillaOverrideExporter.PRE_CONTENT_INIT -> "-Dmoddpbridge.runtimeVanillaPreContentInitFile";
+            case VanillaOverrideExporter.POST_CONTENT_INIT -> "-Dmoddpbridge.runtimeVanillaPostContentInitFile";
+            case VanillaOverrideExporter.FINAL_AFTER_MOD_INIT -> "-Dmoddpbridge.runtimeVanillaFinalFile";
             default -> throw new IllegalArgumentException("Unknown vanilla watch phase: " + phase);
         };
     }

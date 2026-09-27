@@ -6,10 +6,11 @@
 
 - 项目：`mod-dp-bridge`（Mindustry Mod/CP/DP → Data Assets 转换器）。
 - 主线目标：**绑定 Saturation Firepower（SF）**，生产目标版本 **Mindustry v160.5**（v159.7 保留为可接受目标）。
-- 最近两个提交：
-  - `f8e6977` Retarget the main line to Saturation Firepower on Mindustry v160.5
+- 最近提交：
+  - `b943185` Capture and reproduce Mod changes to target content as a Data Patch（原版覆盖全链路 + 测试）
+  - `1c576c2` Add the resume and handover note for a fresh session
   - `50771d7` Record the vanilla-override design and SFOverride mutation survey
-- 工作树干净，全仓测试通过（`scripts/gradle.ps1 test`，133+ 项）。
+- 工作树干净，全仓测试通过（`scripts/gradle.ps1 test`）。
 
 ## 二、必读文档（按顺序）
 
@@ -50,6 +51,27 @@ sha256 0003334AF584F2F113890A8ADA3018FE18912C0612ACA8978517668D169AF288
 server-assets/  work/sf406-v1605-final1/server-assets/   (2337 个外部资产)
 ```
 
+**原版覆盖（已接通，默认 on）**：带 `--source` 运行时，产物内会多出 `patches/vanilla-overrides.hjson`，
+把该 mod 对原版的改动一并带进 DP。关键中间产物与实测数字（SF 4.0.6 + v160.5）：
+
+```text
+-vanilla-overrides.json      # 探针四相位 → 判定（在输出目录根部）
+-vanilla-override-mapping.json  # patch 映射 + 削减明细（原因码）
+work/sf406-v1605-override4/  # 一轮完整运行（exit 0，含 @NoPatch 过滤）
+  DP ZIP 7,246,646 bytes
+  sha256 6D1FBF802DF3F5FA36812E54A0B1A9127FCB591C3AD9867C00AC7A4D2D83CADF
+  watch 116 名 / 18756 个可 patch 字段 → 233 处改动（loadTime=91, afterInit=142）
+  patch 30 个内容 / 60 个字段（2341 字节）；削减 173（引用未迁移 147 + 嵌套对象 26）
+  DataPatcher.apply: content=372 added=711 failed=0 warnings=0
+  provenance: SFire/{SFOverride,TechFix,SFBlocks,SFUnitTypes,SFLiquids,SFStatusEffects,SFPlanets,SFTechTree}.class
+```
+
+（`override3` 与 `override4` 的 patch 字节完全一致，说明判定是确定性的；差别只在捕获时多跳过了
+1384 个 `@NoPatch` 字段。）
+
+关闭开关：`--vanilla-overrides=off`（Web 端取消勾选“还原该 mod 对原版内容的修改”）。
+设计细节与被源码推翻的两处原始判断见 `docs/research/VANILLA_OVERRIDE_PLAN.md` 第七、八节。
+
 ## 四、环境事实与实测命令
 
 - JDK 21（`JAVA_HOME=C:\Program Files\Java\jdk-21`），Gradle wrapper 9.2.1；仓库路径含中文，**必须**用包装脚本（它通过 ASCII junction 运行，避免 test worker classpath 编码问题）：
@@ -80,16 +102,27 @@ server-assets/  work/sf406-v1605-final1/server-assets/   (2337 个外部资产)
 1. **不要 dump 原始大 JSON**（`hybrid-report.json` 有 300+ 路径）。改成脚本只打印汇总。
 2. **patch 绝不能携带 `requiredPlanets`**：headless 服务器会在 `DataPatcher.java:224-247` 永久丢弃该 patch，
    导致服务端与客户端内容集分叉 —— 正是已知崩溃类别。
-3. **原版差分要做"对照空跑"**：原版内容自身的 `init()` 会自然改变某些字段（如 gas 液体的 alpha），
-   必须用一次"不装 Mod 的原版运行"作为对照，只保留两次运行之间的差异。
-4. **绝不整块丢弃内容**：只要根 parser 可构造就必须产出；嵌套武器/部件/特效缺失一律降级保留并给出原因码
+3. **原版差分不需要"对照空跑"**（原设计曾如此假设，已被源码推翻）：探针在 `createModContent()` 入口取
+   干净基线，四相位都在同一次运行内。原因见 `VANILLA_OVERRIDE_PLAN.md` 第八节。
+4. **静态扫描拿到的是 Java 字段名**（`Blocks.titaniumConveyor`），而注册表与 patch 用的是内容名
+   （`titanium-conveyor`）。探针按"注册表名 → 声明类字段 → kebab"顺序解析，产物里同时保留
+   `name`（字段名）与 `runtimeName`（注册表名）；patch 必须用后者。
+5. **每个 `RuntimePreparedFile` 必须有真实 release-JAR provenance**，否则转换器以
+   `RUNTIME_PREPARED_PROVENANCE_MISSING` 硬失败。patch 的 provenance 由监视表命中的源码文件
+   （`.java` → `.class`）解析得到。
+6. **`@NoPatch` 字段不能进 patch**（DataPatcher 会记 warning，而验证要求 0 warning）：探针在捕获原版字段时
+   直接跳过它们（`Block.size`/`hasItems`/`buildType` 等）。
+7. **绝不整块丢弃内容**：只要根 parser 可构造就必须产出；嵌套武器/部件/特效缺失一律降级保留并给出原因码
    （词表见 `VANILLA_OVERRIDE_PLAN.md` 第四节）。
-5. 用户可读中文；提交信息与代码注释用英文（与仓库既有风格一致）。
+8. 用户可读中文；提交信息与代码注释用英文（与仓库既有风格一致）。
 
 ## 六、下一步（用户已确认的优先级）
 
-1. **原版覆盖**：开关 `--vanilla-overrides=on|off`（**默认 on**），范围含方块+单位+状态+物品/液体，
-   引擎为"运行时差分 + 静态监视表"。按 `VANILLA_OVERRIDE_PLAN.md` 第一至五节执行。
-2. **进一步还原单位/建筑**：缺失武器/部件不丢单位，只做削减 + 明确原因（同上词表）；
-   长期方向是 `docs/RUNTIME_OBJECT_GRAPH_PLAN.md` 的纯运行时对象图（schema v3）。
+1. ~~**原版覆盖**~~ **已完成**（`b943185`）：开关 `--vanilla-overrides=on|off`（默认 on），
+   范围含方块+单位+状态+物品/液体，引擎为"同轮四相位运行时差分 + 静态监视表"。
+2. **进一步还原单位/建筑**：缺失武器/部件不丢单位，只做削减 + 明确原因（词表见
+   `VANILLA_OVERRIDE_PLAN.md` 第四节）。原版覆盖已证明 `ammoTypes`/`weapons` 这类嵌套对象仍是最大一类削减
+   （26 条 `NESTED_OBJECT_OMITTED`），长期方向是 `docs/RUNTIME_OBJECT_GRAPH_PLAN.md` 的纯运行时对象图（schema v3）。
 3. 之后：闭包 + 部署形态指纹验证阶段（`SF_GAP_ANALYSIS.md` 第三节第 3 项）。
+4. 小项：`vanilla-overrides.hjson` 目前只覆盖标量/数组标量；`shownPlanets`/`databaseTabs` 因为引用未迁移的
+   星球（`sfire-mod-tiberia`）一律丢弃 —— 若将来迁移 planet/sector，应重新纳入。

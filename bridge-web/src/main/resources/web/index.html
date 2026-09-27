@@ -136,6 +136,15 @@
                         <small>发布 JAR 将以本服务账号的完整文件、网络与系统权限执行。独立 JVM <b>不是安全沙箱</b>；仅可提交本地、来源明确且你信任的输入。可选 source ZIP 不会被执行。</small>
                     </span>
                 </label>
+
+                <label id="runtime-vanilla-overrides-box" class="runtime-trust">
+                    <input id="vanilla-overrides" type="checkbox" checked>
+                    <span class="trust-check" aria-hidden="true"></span>
+                    <span>
+                        <strong>还原该 mod 对原版内容的修改（默认开启）</strong>
+                        <small>产出 <code>patches/vanilla-overrides.hjson</code>，把该 mod 对原版方块/单位/状态/物品/液体的改动一并带进 DP。需要同时提供源码 ZIP 才能静态读出被改动的原版内容名；无法用 DP 表达的部分会写入削减报告并给出原因码。</small>
+                    </span>
+                </label>
             </section>
 
             <p id="upload-error" class="inline-message error-message" role="alert" hidden></p>

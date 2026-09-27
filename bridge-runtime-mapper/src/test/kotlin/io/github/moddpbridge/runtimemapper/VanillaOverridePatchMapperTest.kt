@@ -3,8 +3,11 @@ package io.github.moddpbridge.runtimemapper
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
@@ -66,8 +69,20 @@ class VanillaOverridePatchMapperTest {
     }
 
     @Test
+    fun addressesTheRegistryNameRatherThanTheDeclarationFieldName() {
+        val result = mapArtifact(
+            """{"contentType":"block","name":"titaniumConveyor","runtimeName":"titanium-conveyor","overrides":[""" +
+                number("health", "900") + """]}""",
+        )
+
+        val block = json.parseToJsonElement(String(result.patchBytes)).jsonObject["block"]!!.jsonObject
+        assertNotNull(block["titanium-conveyor"], block.toString())
+        assertNull(block["titaniumConveyor"], block.toString())
+    }
+
+    @Test
     fun dropsReferenceToContentThePatchDoesNotDeclare() {
-        val result = VanillaOverridePatchMapper.map(
+        val result = mapWithDefaults(
             artifact(
                 """{"contentType":"block","name":"salvo","overrides":[""" +
                     """{"field":"planet","value":{"declaredType":"mindustry.type.Planet","kind":"contentRef","contentType":"planet","name":"sfire-mod-tiberia","ownerMod":"sfire-mod"}}""" +
@@ -83,13 +98,13 @@ class VanillaOverridePatchMapperTest {
 
     @Test
     fun keepsReferenceToMigratedModContent() {
-        val result = VanillaOverridePatchMapper.map(
+        val result = mapWithDefaults(
             artifact(
                 """{"contentType":"block","name":"salvo","overrides":[""" +
                     """{"field":"item","value":{"declaredType":"mindustry.type.Item","kind":"contentRef","contentType":"item","name":"sfire-mod-chromium","ownerMod":"sfire-mod"}}""" +
                     """]}""",
             ),
-            VanillaOverrideMappingOptions(migratedContentNames = setOf("sfire-mod-chromium")),
+            defaultOptions().copy(migratedContentNames = setOf("sfire-mod-chromium")),
         )
 
         assertEquals(1, result.summary.patchedFields)
@@ -98,7 +113,7 @@ class VanillaOverridePatchMapperTest {
 
     @Test
     fun neverEmitsCampaignPlacementFields() {
-        val result = VanillaOverridePatchMapper.map(
+        val result = mapWithDefaults(
             artifact(
                 """{"contentType":"block","name":"salvo","overrides":[""" +
                     """{"field":"shownPlanets","value":{"declaredType":"arc.struct.Seq","kind":"array","values":[{"declaredType":"mindustry.type.Planet","kind":"contentRef","contentType":"planet","name":"serpulo","ownerMod":null}],"truncated":false}},""" +
@@ -122,7 +137,7 @@ class VanillaOverridePatchMapperTest {
 
     @Test
     fun dropsNestedObjectsAndNullsWithReasons() {
-        val result = VanillaOverridePatchMapper.map(
+        val result = mapWithDefaults(
             artifact(
                 """{"contentType":"block","name":"salvo","overrides":[""" +
                     """{"field":"weapons","value":{"declaredType":"arc.struct.Seq","kind":"array","values":[{"declaredType":"mindustry.type.Weapon","kind":"opaque","reason":"UNSUPPORTED_RUNTIME_OBJECT","runtimeClass":"mindustry.type.Weapon","detail":null}],"truncated":false}},""" +
@@ -143,7 +158,7 @@ class VanillaOverridePatchMapperTest {
 
     @Test
     fun dropsNonFiniteNumbersAndTruncatedStrings() {
-        val result = VanillaOverridePatchMapper.map(
+        val result = mapWithDefaults(
             artifact(
                 """{"contentType":"item","name":"copper","overrides":[""" +
                     """{"field":"hardness","value":{"declaredType":"float","kind":"number","numberType":"float","value":"NaN"}},""" +
@@ -164,7 +179,7 @@ class VanillaOverridePatchMapperTest {
         val path = directory.resolve("vanilla-overrides.json")
         Files.writeString(path, """{"schemaVersion": 99, "contents": []}""", StandardCharsets.UTF_8)
 
-        assertThrows<VanillaOverrideMappingException> { VanillaOverridePatchMapper.map(path) }
+        assertThrows<VanillaOverrideMappingException> { mapWithDefaults(path) }
     }
 
     @Test
@@ -176,7 +191,7 @@ class VanillaOverridePatchMapperTest {
                 """"stats":{"overrideCount":1,"loadTimeOverrides":1,"afterInitOverrides":0,"targetInitRecomputed":7,"missingWatchTargets":1}""",
         )
 
-        val result = VanillaOverridePatchMapper.map(path)
+        val result = mapWithDefaults(path)
 
         assertEquals("sfire-mod", result.summary.targetMod)
         assertEquals(1, result.summary.observedContents)
@@ -189,13 +204,48 @@ class VanillaOverridePatchMapperTest {
         assertEquals(VanillaOverridePatchMapper.PATCH_PATH, result.patchPath)
     }
 
+    @Test
+    fun attributesThePatchToTheClassEntryOfTheWatchedSource() {
+        val result = mapArtifact("""{"contentType":"block","name":"salvo","overrides":[""" + number("health", "900") + """]}""")
+
+        assertEquals(listOf("SFire/content/SFOverride.class", "SFire/content/SFOverride1.class"), result.provenance)
+        assertTrue(result.reportJson.contains("\"provenance\""), result.reportJson)
+    }
+
+    @Test
+    fun fallsBackToModMetadataWhenNoWatchedSourceIsPackaged() {
+        val path = artifact("""{"contentType":"block","name":"salvo","overrides":[""" + number("health", "900") + """]}""")
+
+        val result = mapWithDefaults(
+            path,
+            defaultOptions().copy(provenanceSources = listOf("SFire/Missing.java")),
+        )
+
+        assertEquals(listOf("mod.hjson"), result.provenance)
+    }
+
+    @Test
+    fun refusesToAttributeThePatchWithoutAReleaseJar() {
+        val path = artifact("""{"contentType":"block","name":"salvo","overrides":[""" + number("health", "900") + """]}""")
+
+        assertThrows<VanillaOverrideMappingException> {
+            mapWithDefaults(path, defaultOptions().copy(modJar = null))
+        }
+    }
+
     private fun number(field: String, value: String) =
         """{"field":"$field","moment":"LOAD_TIME","targetInitRecomputed":false,"baselineAbsent":false,""" +
             """"value":{"declaredType":"int","kind":"number","numberType":"int","value":"$value"}}"""
 
+    /** Maps with the fixture release JAR, which is what every case except the missing-JAR case needs. */
+    private fun mapWithDefaults(
+        path: Path,
+        options: VanillaOverrideMappingOptions = defaultOptions(),
+    ): VanillaOverrideMappingResult = VanillaOverridePatchMapper.map(path, options)
+
     /** Writes an artifact containing a single content entry plus optional extra top-level members. */
     private fun mapArtifact(content: String): VanillaOverrideMappingResult =
-        VanillaOverridePatchMapper.map(artifact(content))
+        mapWithDefaults(artifact(content), defaultOptions())
 
     private fun artifact(content: String, extra: String = ""): Path {
         val path = directory.resolve("vanilla-overrides-${counter++}.json")
@@ -206,6 +256,33 @@ class VanillaOverridePatchMapperTest {
         )
         return path
     }
+
+    private fun defaultOptions(): VanillaOverrideMappingOptions = VanillaOverrideMappingOptions(
+        modJar = releaseJar(),
+        provenanceSources = listOf("SFire/content/SFOverride.java", "SFire/content/SFOverride1.java"),
+    )
+
+    /** A miniature release JAR holding the entries a generated patch may claim provenance from. */
+    private fun releaseJar(): Path {
+        if (!Files.isRegularFile(modJar)) {
+            ZipOutputStream(Files.newOutputStream(modJar)).use { zip ->
+                listOf(
+                    "mod.hjson",
+                    "SFire/content/SFOverride.class",
+                    "SFire/content/SFOverride1.class",
+                    "SFire/TechFix.class",
+                ).forEach { entry ->
+                    zip.putNextEntry(ZipEntry(entry))
+                    zip.write(byteArrayOf(0x50, 0x4b, 1))
+                    zip.closeEntry()
+                }
+            }
+        }
+        return modJar
+    }
+
+    private val modJar: Path
+        get() = directory.resolve("Saturation-Firepower.jar")
 
     private companion object {
         var counter = 0

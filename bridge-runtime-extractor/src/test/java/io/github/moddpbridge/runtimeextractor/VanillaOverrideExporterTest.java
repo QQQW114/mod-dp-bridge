@@ -30,6 +30,7 @@ class VanillaOverrideExporterTest {
     private static final String ITEM = "mindustry.type.Item";
     private static final String UNIT = "mindustry.type.UnitType";
     private static final String LIQUID = "mindustry.type.Liquid";
+    private static final String CONVEYOR = "mindustry.world.blocks.distribution.Conveyor";
 
     @TempDir
     Path directory;
@@ -139,6 +140,29 @@ class VanillaOverrideExporterTest {
         assertEquals("ammoCapacity", override.field());
         assertTrue(override.baselineAbsent());
         assertEquals("12", override.value());
+    }
+
+    @Test
+    void keepsTheRegistryNameSeparateFromTheDeclarationFieldName() throws Exception {
+        // Mod source says Blocks.titaniumConveyor; the registry and every Data Patch key say
+        // titanium-conveyor. Losing that distinction silently produced patches nobody applied.
+        writePhases(
+            declared("block", "titaniumConveyor", CONVEYOR, "titanium-conveyor", "health", "1"),
+            declared("block", "titaniumConveyor", CONVEYOR, "titanium-conveyor", "health", "900"),
+            declared("block", "titaniumConveyor", CONVEYOR, "titanium-conveyor", "health", "900"),
+            declared("block", "titaniumConveyor", CONVEYOR, "titanium-conveyor", "health", "900")
+        );
+
+        VanillaOverrideExporter.Result result = VanillaOverrideExporter.export(directory);
+
+        VanillaOverrideExporter.ContentOverride content = result.contents().get(0);
+        assertEquals("titaniumConveyor", content.name());
+        assertEquals("titanium-conveyor", content.runtimeName());
+        assertEquals("DECLARATION_FIELD", content.resolution());
+        assertTrue(
+            VanillaOverrideExporter.toJson(result, "sfire-mod").contains("\"runtimeName\": \"titanium-conveyor\""),
+            "artifact must carry the registry name"
+        );
     }
 
     @Test
@@ -270,7 +294,9 @@ class VanillaOverrideExporterTest {
         text.append("header\t1\t").append(phase).append('\t').append(encode(spec)).append('\n');
         for (Content content : contents) {
             text.append("content\t").append(content.type).append('\t').append(encode(content.name)).append('\t')
-                .append(encode(content.runtimeClass)).append('\n');
+                .append(encode(content.runtimeName == null ? content.name : content.runtimeName)).append('\t')
+                .append(encode(content.runtimeClass)).append('\t')
+                .append(encode(content.resolution)).append('\n');
             for (Map.Entry<String, String> field : content.fields.entrySet()) {
                 if (field.getValue() == null) continue;
                 text.append("field\t").append(content.type).append('\t').append(encode(content.name)).append('\t')
@@ -290,6 +316,20 @@ class VanillaOverrideExporterTest {
         for (int index = 0; index < fieldValues.length; index += 2) {
             content.fields.put(fieldValues[index], fieldValues[index + 1]);
         }
+        return content;
+    }
+
+    /** A content entry resolved through its declaration field, so the registry name differs. */
+    private static Content declared(
+        String type,
+        String name,
+        String runtimeClass,
+        String runtimeName,
+        String... fieldValues
+    ) {
+        Content content = content(type, name, runtimeClass, fieldValues);
+        content.runtimeName = runtimeName;
+        content.resolution = "DECLARATION_FIELD";
         return content;
     }
 
@@ -327,6 +367,8 @@ class VanillaOverrideExporterTest {
         private final String name;
         private final String runtimeClass;
         private final Map<String, String> fields = new LinkedHashMap<>();
+        private String runtimeName;
+        private String resolution = "REGISTRY_NAME";
         private String missingReason;
 
         Content(String type, String name, String runtimeClass) {

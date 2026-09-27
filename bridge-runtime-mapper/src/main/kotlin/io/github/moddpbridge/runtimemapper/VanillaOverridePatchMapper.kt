@@ -40,6 +40,10 @@ data class VanillaOverrideMappingOptions(
      * the target registry.
      */
     val migratedContentNames: Set<String> = emptySet(),
+    /** Release-JAR archive whose entries back the generated patch. */
+    val modJar: Path? = null,
+    /** Mod source paths that referenced the watched target content, in source-file form. */
+    val provenanceSources: List<String> = emptyList(),
 )
 
 data class VanillaOverrideMappingSummary(
@@ -64,6 +68,8 @@ data class VanillaOverrideMappingSummary(
 data class VanillaOverrideMappingResult(
     val patchPath: String,
     val patchBytes: ByteArray,
+    /** Release-JAR entries the patch was derived from; the converter requires non-empty provenance. */
+    val provenance: List<String>,
     val summary: VanillaOverrideMappingSummary,
     val reductions: List<VanillaOverrideReduction>,
     val diagnostics: List<Diagnostic>,
@@ -87,6 +93,7 @@ object VanillaOverridePatchMapper {
     const val PATCH_LABEL = "vanilla-overrides"
 
     private const val supportedSchemaVersion = 1
+    private const val MAX_PROVENANCE_ENTRIES = 16
 
     /** Reason codes; kept stable because reports and tests match on them. */
     const val CODE_NESTED_OBJECT_OMITTED = "NESTED_OBJECT_OMITTED"
@@ -144,7 +151,8 @@ object VanillaOverridePatchMapper {
         for (element in contents) {
             val content = element as? JsonObject ?: continue
             val contentType = content.string("contentType") ?: continue
-            val name = content.string("name") ?: continue
+            // The patch must address the target registry name; the watch name may be a declaration field.
+            val name = content.string("runtimeName") ?: content.string("name") ?: continue
             val overrides = content["overrides"] as? JsonArray ?: continue
             for (entry in overrides) {
                 val override = entry as? JsonObject ?: continue
@@ -172,6 +180,7 @@ object VanillaOverridePatchMapper {
         }
 
         val missingTargets = (root["missingWatchTargets"] as? JsonArray)?.size ?: 0
+        val provenance = resolveProvenance(options, path)
         val patchRoot = buildJsonObject {
             put("name", JsonPrimitive(PATCH_LABEL))
             patched.forEach { (contentType, entries) ->
@@ -225,11 +234,51 @@ object VanillaOverridePatchMapper {
         return VanillaOverrideMappingResult(
             patchPath = PATCH_PATH,
             patchBytes = patchBytes,
+            provenance = provenance,
             summary = summary,
             reductions = reductions,
             diagnostics = diagnostics,
-            reportJson = renderReport(path, summary, reductions, diagnostics),
+            reportJson = renderReport(path, summary, reductions, diagnostics, provenance),
         )
+    }
+
+    /**
+     * Resolves the release-JAR entries the patch is derived from.
+     *
+     * A generated artifact must not claim provenance it does not have, so every candidate is verified
+     * against the archive. Mod sources are named after their compilation unit, which is why the source
+     * path is rewritten to its class entry; the archive's own metadata is the last resort.
+     */
+    private fun resolveProvenance(options: VanillaOverrideMappingOptions, artifact: Path): List<String> {
+        val jar = options.modJar
+        if (jar == null || !Files.isRegularFile(jar)) {
+            throw VanillaOverrideMappingException(
+                "The release Mod JAR is required to attribute '$PATCH_PATH' to real archive entries: $artifact",
+            )
+        }
+        val candidates = linkedSetOf<String>()
+        java.util.zip.ZipFile(jar.toFile()).use { zip ->
+            val entries = linkedSetOf<String>()
+            val enumeration = zip.entries()
+            while (enumeration.hasMoreElements()) {
+                entries += enumeration.nextElement().name
+            }
+            options.provenanceSources.forEach { source ->
+                val normalized = source.replace('\\', '/').removePrefix("/")
+                val classEntry = normalized.removeSuffix(".java") + ".class"
+                if (classEntry in entries) candidates += classEntry
+            }
+            if (candidates.isEmpty()) {
+                listOf("mod.hjson", "plugin.hjson").firstOrNull { it in entries }?.let(candidates::add)
+            }
+        }
+        if (candidates.isEmpty()) {
+            throw VanillaOverrideMappingException(
+                "No release-JAR entry backs '$PATCH_PATH': watched sources ${options.provenanceSources.size} " +
+                    "and no mod metadata entry was found in $jar",
+            )
+        }
+        return candidates.sorted().take(MAX_PROVENANCE_ENTRIES)
     }
 
     private fun reduction(contentType: String, name: String, field: String, code: String, detail: String) =
@@ -334,11 +383,13 @@ object VanillaOverridePatchMapper {
         summary: VanillaOverrideMappingSummary,
         reductions: List<VanillaOverrideReduction>,
         diagnostics: List<Diagnostic>,
+        provenance: List<String>,
     ): String = json.encodeToString(
         JsonObject.serializer(),
         buildJsonObject {
             put("artifact", JsonPrimitive(path.toString()))
             put("patchPath", JsonPrimitive(PATCH_PATH))
+            put("provenance", JsonArray(provenance.map(::JsonPrimitive)))
             put(
                 "summary",
                 buildJsonObject {

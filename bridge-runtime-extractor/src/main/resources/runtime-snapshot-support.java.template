@@ -22,6 +22,7 @@ import mindustry.type.Weather;
 import mindustry.world.Block;
 
 import java.io.BufferedWriter;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -876,24 +877,40 @@ final class RuntimeSnapshotSupport {
             for (Map.Entry<ContentType, List<String>> group : watch.entrySet()) {
                 ContentType type = group.getKey();
                 for (String name : group.getValue()) {
-                    Content content = Vars.content.getByName(type, name);
-                    if (content == null) {
-                        writeRow(output, "missing", type.name(), name, encode("NOT_PRESENT_IN_TARGET"));
+                    Resolution resolved = resolveVanillaTarget(type, name);
+                    if (resolved == null) {
+                        writeRow(output, "missing", type.name(), encode(name), encode("NOT_PRESENT_IN_TARGET"));
                         missingCount++;
                         continue;
                     }
+                    Content content = resolved.content();
                     if (content.minfo.mod != null) {
-                        writeRow(output, "missing", type.name(), name, encode("NAME_OWNED_BY_MOD_CONTENT"));
+                        writeRow(output, "missing", type.name(), encode(name), encode("NAME_OWNED_BY_MOD_CONTENT"));
                         missingCount++;
                         continue;
                     }
-                    writeRow(output, "content", type.name(), name, encode(content.getClass().getName()));
+                    writeRow(
+                        output,
+                        "content",
+                        type.name(),
+                        encode(name),
+                        encode(contentName(content)),
+                        encode(content.getClass().getName()),
+                        encode(resolved.strategy())
+                    );
                     contentCount++;
-                    Map<String, String> fields = captureFields(content, resolveFallback(content));
+                    Map<String, String> fields = vanillaCapturedFields(content);
                     int rows = 0;
                     for (Map.Entry<String, String> field : fields.entrySet()) {
                         if (rows++ >= MAX_VANILLA_FIELD_ROWS) break;
-                        writeRow(output, "field", type.name(), name, encode(field.getKey()), encode(field.getValue()));
+                        writeRow(
+                            output,
+                            "field",
+                            type.name(),
+                            encode(name),
+                            encode(field.getKey()),
+                            encode(field.getValue())
+                        );
                         fieldCount++;
                     }
                 }
@@ -903,6 +920,113 @@ final class RuntimeSnapshotSupport {
             appendVanillaPhase(phaseFile, phaseMarker + "\t" + contentCount + "\t" + fieldCount + "\t" + missingCount);
         }
         return contentCount;
+    }
+
+    /**
+     * Captures the fields a Data Patch could actually carry for one target content entry.
+     *
+     * <p>Fields the target marks {@code @NoPatch} are excluded here and only here. They remain
+     * capturable for Mod content declarations, where the target's content parser accepts them; a Data
+     * Patch that named one would be rejected with a warning, and the packaged DP must apply cleanly.</p>
+     */
+    private static Map<String, String> vanillaCapturedFields(Content content) {
+        Map<String, String> captured = captureFields(content, resolveFallback(content));
+        Set<String> blocked = new LinkedHashSet<>();
+        try {
+            for (Class<?> type = content.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (isNoPatch(field)) blocked.add(field.getName());
+                }
+            }
+        } catch (Throwable error) {
+            return captured;
+        }
+        if (blocked.isEmpty()) return captured;
+        Map<String, String> patchable = new LinkedHashMap<>(captured.size());
+        for (Map.Entry<String, String> entry : captured.entrySet()) {
+            if (blocked.contains(entry.getKey())) continue;
+            patchable.put(entry.getKey(), entry.getValue());
+        }
+        return patchable;
+    }
+
+    private static boolean isNoPatch(Field field) {
+        try {
+            for (Annotation annotation : field.getAnnotations()) {
+                if (annotation.annotationType().getName().equals("mindustry.mod.NoPatch")) return true;
+            }
+            for (Annotation annotation : field.getDeclaringClass().getAnnotations()) {
+                if (annotation.annotationType().getName().equals("mindustry.mod.NoPatch")) return true;
+            }
+        } catch (Throwable ignored) {
+            // An unreadable annotation never blocks capture; the target's own patcher stays authoritative.
+        }
+        return false;
+    }
+
+    /**
+     * Resolves one watched name to target content.
+     *
+     * <p>The watch list is derived from Mod source, where target content is referenced through the
+     * declaration classes - {@code Blocks.titaniumConveyor}, {@code Items.blastCompound}. Those are Java
+     * field names, while the runtime registry is keyed by content names such as
+     * {@code titanium-conveyor}. The declaration field is therefore the authoritative resolution, with
+     * the registry name and its kebab-case spelling as fallbacks.</p>
+     */
+    private static Resolution resolveVanillaTarget(ContentType type, String name) {
+        Content exact = Vars.content.getByName(type, name);
+        if (exact != null) return new Resolution(exact, "REGISTRY_NAME");
+        Content declared = declaredVanillaContent(type, name);
+        if (declared != null) return new Resolution(declared, "DECLARATION_FIELD");
+        String kebab = kebabCase(name);
+        if (!kebab.equals(name)) {
+            Content alternate = Vars.content.getByName(type, kebab);
+            if (alternate != null) return new Resolution(alternate, "KEBAB_NAME");
+        }
+        return null;
+    }
+
+    /**
+     * Reads a public static declaration field from a target content class. Only class names shipped by
+     * the target are loaded, and the field must be static, so no Mod code runs.
+     */
+    private static Content declaredVanillaContent(ContentType type, String name) {
+        String ownerName = switch (type) {
+            case item -> "mindustry.content.Items";
+            case liquid -> "mindustry.content.Liquids";
+            case status -> "mindustry.content.StatusEffects";
+            case unit -> "mindustry.content.UnitTypes";
+            case block -> "mindustry.content.Blocks";
+            default -> null;
+        };
+        if (ownerName == null) return null;
+        try {
+            Class<?> owner = Class.forName(ownerName, false, Content.class.getClassLoader());
+            if (!isTargetOwnedClass(owner, Content.class)) return null;
+            Field declared = owner.getField(name);
+            if (!Modifier.isStatic(declared.getModifiers())) return null;
+            Object value = declared.get(null);
+            return value instanceof Content content ? content : null;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
+        }
+    }
+
+    private static String kebabCase(String name) {
+        StringBuilder result = new StringBuilder(name.length() + 8);
+        for (int index = 0; index < name.length(); index++) {
+            char character = name.charAt(index);
+            if (Character.isUpperCase(character)) {
+                if (index > 0 && name.charAt(index - 1) != '-') result.append('-');
+                result.append(Character.toLowerCase(character));
+            } else {
+                result.append(character);
+            }
+        }
+        return result.toString();
+    }
+
+    private record Resolution(Content content, String strategy) {
     }
 
     private static Map<ContentType, List<String>> vanillaWatch(String spec) {

@@ -37,6 +37,8 @@
         removeSource: $("#remove-source"),
         allowModExecution: $("#allow-mod-execution"),
         runtimeTrustBox: $("#runtime-trust-box"),
+        vanillaOverrides: $("#vanilla-overrides"),
+        vanillaOverridesBox: $("#runtime-vanilla-overrides-box"),
         staticScopeNote: $("#static-scope-note"),
         runtimeScopeNote: $("#runtime-scope-note"),
         uploadError: $("#upload-error"),
@@ -399,6 +401,9 @@
         elements.allowModExecution.disabled = active || !runtime || !state.runtimeReady;
         elements.runtimeTrustBox.classList.toggle("is-disabled", elements.allowModExecution.disabled);
         elements.runtimeTrustBox.classList.toggle("is-confirmed", elements.allowModExecution.checked);
+        elements.vanillaOverrides.disabled = active || !runtime || !state.runtimeReady;
+        elements.vanillaOverridesBox.classList.toggle("is-disabled", elements.vanillaOverrides.disabled);
+        elements.vanillaOverridesBox.classList.toggle("is-confirmed", elements.vanillaOverrides.checked);
         elements.modeStatic.disabled = active;
         elements.modeRuntime.disabled = active || !state.runtimeReady;
         elements.runtimeModeCard.classList.toggle("is-locked", active);
@@ -666,6 +671,7 @@
             form.append("modJar", state.file, state.file.name);
             if (state.sourceFile) form.append("source", state.sourceFile, state.sourceFile.name);
             form.append("allowModExecution", "true");
+            form.append("vanillaOverrides", elements.vanillaOverrides.checked ? "true" : "false");
         } else {
             form.append("file", state.file, state.file.name);
         }
