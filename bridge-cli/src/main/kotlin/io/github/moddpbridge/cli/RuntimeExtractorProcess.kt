@@ -18,6 +18,10 @@ internal data class RuntimeExtractorRequest(
     val modId: String?,
     val timeout: Duration,
     val allowModExecution: Boolean,
+    /** `type:name,name;type:name` target-content watch list; null disables target-content capture. */
+    val vanillaWatch: String? = null,
+    /** Destination of the runtime target-content override artifact; requires [vanillaWatch]. */
+    val vanillaOverrides: Path? = null,
 )
 
 internal data class RuntimeExtractorResult(
@@ -155,6 +159,14 @@ internal class RuntimeExtractorProcess(
             add(modId)
         }
         if (request.allowModExecution) add("--allow-mod-execution")
+        request.vanillaWatch?.takeIf(String::isNotBlank)?.let { watch ->
+            add("--vanilla-watch")
+            add(watch)
+        }
+        request.vanillaOverrides?.takeIf { request.vanillaWatch?.isNotBlank() == true }?.let { overrides ->
+            add("--vanilla-overrides-output")
+            add(overrides.toAbsolutePath().normalize().toString())
+        }
     }
 
     private fun pumpLines(reader: BufferedReader, sink: (String) -> Unit) {

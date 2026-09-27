@@ -4,7 +4,10 @@ import io.github.moddpbridge.converter.BridgeConverter
 import io.github.moddpbridge.converter.ConversionException
 import io.github.moddpbridge.converter.ConversionRequest
 import io.github.moddpbridge.converter.RuntimePreparedConversion
+import io.github.moddpbridge.converter.RuntimePreparedFile
 import io.github.moddpbridge.converter.SecurityLimits
+import io.github.moddpbridge.converter.VanillaWatchList
+import io.github.moddpbridge.converter.VanillaWatchListScanner
 import io.github.moddpbridge.model.ConversionReport
 import io.github.moddpbridge.model.ConversionResult
 import io.github.moddpbridge.model.ConversionReportJson
@@ -17,6 +20,9 @@ import io.github.moddpbridge.model.ValidationStage
 import io.github.moddpbridge.model.ValidationStageResult
 import io.github.moddpbridge.model.ValidationStatus
 import io.github.moddpbridge.model.toMarkdown
+import io.github.moddpbridge.runtimemapper.VanillaOverrideMappingOptions
+import io.github.moddpbridge.runtimemapper.VanillaOverrideMappingResult
+import io.github.moddpbridge.runtimemapper.VanillaOverridePatchMapper
 import io.github.moddpbridge.target.v1597.ContentApplyValidationResult
 import io.github.moddpbridge.target.v1597.Mindustry1597ContentApplyValidator
 import io.github.moddpbridge.target.v1597.Mindustry1597ServerValidator
@@ -47,6 +53,7 @@ internal enum class RuntimePipelineStage(val wireName: String) {
     SOURCE_INDEX("sourceIndex"),
     RUNTIME_TO_DP_MAPPING("runtimeToDpMapping"),
     HYBRID_SOURCE_SELECTION("hybridSourceSelection"),
+    VANILLA_OVERRIDES("vanillaOverrides"),
     PACKAGING("packaging"),
     DP_VALIDATION("dpValidation"),
 }
@@ -186,6 +193,11 @@ internal data class RuntimeConversionPipelineRequest(
     val serverValidationTimeout: Duration,
     val allowModExecution: Boolean,
     val hybridMaxRounds: Int = 8,
+    /**
+     * Reproduce the source Mod's changes to target (vanilla) content as a Data Patch. Requires the Mod
+     * source tree, because the watched target names are read statically from it.
+     */
+    val vanillaOverrides: Boolean = true,
 )
 
 internal data class RuntimeConversionPipelineResult(
@@ -299,6 +311,10 @@ internal class RuntimeConversionPipeline(
         }
         val pinnedTarget = preflight.target
 
+        val vanillaOverridesArtifact = output.resolve("vanilla-overrides.json")
+        val vanillaWatch = resolveVanillaWatch(request, pinnedTarget, logger)
+        val vanillaWatchSpec = vanillaWatch?.spec?.takeIf(String::isNotBlank)
+
         logger.info("Starting isolated runtime extraction. Supplied Mod bytecode will execute in a child JVM.")
         extractorResult = try {
             extractor.extract(
@@ -312,6 +328,8 @@ internal class RuntimeConversionPipeline(
                     modId = request.modId,
                     timeout = request.runtimeTimeout,
                     allowModExecution = request.allowModExecution,
+                    vanillaWatch = vanillaWatchSpec,
+                    vanillaOverrides = vanillaOverridesArtifact.takeIf { vanillaWatchSpec != null },
                 ),
                 logger,
             )
@@ -581,6 +599,15 @@ internal class RuntimeConversionPipeline(
             }
         }
 
+        prepared = applyVanillaOverrides(
+            request = request,
+            watch = vanillaWatch,
+            artifact = vanillaOverridesArtifact,
+            prepared = prepared,
+            logger = logger,
+            stages = stages,
+        )
+
         if (!prepared.hasPreparedContentDeclarations()) {
             val summary = if (request.source == null) {
                 "The runtime mapper emitted no Item/Liquid/Status declaration and no --source input was supplied " +
@@ -771,7 +798,9 @@ internal class RuntimeConversionPipeline(
                     "dataPatchApplyAddedContent" to (apply.addedContent?.toString() ?: "unknown"),
                     "dataPatchApplyLog" to applyLog.toString(),
                     "serverLoadValidation" to "notRun:no-map-or-save-loaded",
-                ),
+                ) + (
+                    stages.lastOrNull { it.stage == RuntimePipelineStage.VANILLA_OVERRIDES }?.metadata ?: emptyMap()
+                    ),
             )
             finalReport = finalReport.copy(summary = finalReport.summary.withDiagnosticCounts(finalReport.diagnostics))
             Files.writeString(converted.reportJson, ConversionReportJson.encode(finalReport) + "\n", StandardCharsets.UTF_8)
@@ -964,6 +993,179 @@ internal class RuntimeConversionPipeline(
             }
         }
     }
+
+    /**
+     * Reads the target-content names the Mod's Java source references. The scan is static and bounded:
+     * nothing is compiled, and the runtime probe records every name it cannot resolve.
+     */
+    private fun resolveVanillaWatch(
+        request: RuntimeConversionPipelineRequest,
+        target: MindustryTarget,
+        logger: BridgeLogger,
+    ): VanillaWatchList? {
+        if (!request.vanillaOverrides) {
+            logger.info(
+                "Target-content overrides are disabled; the Mod's own changes to ${target.displayName} " +
+                    "content will not be reproduced in the Data Patch.",
+            )
+            return null
+        }
+        val source = request.source
+        if (source == null) {
+            logger.warn(
+                "No --source tree was supplied, so target-content references cannot be read statically; " +
+                    "target-content overrides are skipped.",
+            )
+            return null
+        }
+        return try {
+            val watch = VanillaWatchListScanner.scan(source)
+            watch.diagnostics.forEach(logger::diagnostic)
+            if (watch.isEmpty) {
+                logger.warn("The Mod source tree references no target content; no override patch will be produced.")
+            } else {
+                logger.info(
+                    "Target-content watch list: ${watch.totalNames} name(s) from ${watch.scannedJavaFiles} Java " +
+                        "source file(s) across ${watch.names.size} content type(s).",
+                )
+            }
+            watch
+        } catch (error: Throwable) {
+            logger.warn("Could not scan the Mod source tree for target content references: ${error.message}")
+            null
+        }
+    }
+
+    /**
+     * Turns the runtime-observed target-content overrides into one Data Patch file. Overrides are
+     * reproduced only where the target model can carry them; every dropped field keeps an explicit
+     * reason code instead of being silently approximated.
+     */
+    private fun applyVanillaOverrides(
+        request: RuntimeConversionPipelineRequest,
+        watch: VanillaWatchList?,
+        artifact: Path,
+        prepared: RuntimePreparedConversion,
+        logger: BridgeLogger,
+        stages: MutableList<RuntimePipelineStageRecord>,
+    ): RuntimePreparedConversion {
+        if (!request.vanillaOverrides) {
+            stages += RuntimePipelineStageRecord(
+                RuntimePipelineStage.VANILLA_OVERRIDES,
+                RuntimePipelineStageStatus.NOT_RUN,
+                "Target-content overrides were disabled with --vanilla-overrides=off.",
+                metadata = mapOf("vanillaOverrides" to "off"),
+            )
+            return prepared
+        }
+        if (watch == null) {
+            stages += RuntimePipelineStageRecord(
+                RuntimePipelineStage.VANILLA_OVERRIDES,
+                RuntimePipelineStageStatus.NOT_RUN,
+                "No Mod source tree was available to derive the target-content watch list.",
+                metadata = mapOf("vanillaOverrides" to "on", "vanillaOverridesSkipReason" to "noSourceTree"),
+            )
+            return prepared
+        }
+        if (watch.isEmpty) {
+            stages += RuntimePipelineStageRecord(
+                RuntimePipelineStage.VANILLA_OVERRIDES,
+                RuntimePipelineStageStatus.NOT_RUN,
+                "The Mod source tree references no target content, so nothing had to be overridden.",
+                metadata = mapOf("vanillaOverrides" to "on", "vanillaOverridesSkipReason" to "noReferences"),
+            )
+            return prepared
+        }
+        if (!Files.isRegularFile(artifact)) {
+            val summary = "Target-content overrides were requested but the runtime extractor wrote no $artifact."
+            logger.error(summary)
+            stages += RuntimePipelineStageRecord(
+                RuntimePipelineStage.VANILLA_OVERRIDES,
+                RuntimePipelineStageStatus.FAILED,
+                summary,
+                listOfNotNull(artifact.takeIf(Files::exists)),
+                mapOf("vanillaOverrides" to "on"),
+            )
+            return prepared
+        }
+
+        val migratedContent = prepared.files
+            .map { it.outputPath }
+            .filter { it.startsWith("content/") && it.endsWith(".hjson") }
+            .map { it.substringAfterLast('/').removeSuffix(".hjson") }
+            .toSet()
+        return try {
+            val mapped = VanillaOverridePatchMapper.map(
+                artifact,
+                VanillaOverrideMappingOptions(migratedContentNames = migratedContent),
+            )
+            mapped.diagnostics.forEach(logger::diagnostic)
+            if (mapped.summary.patchedFields == 0) {
+                stages += RuntimePipelineStageRecord(
+                    RuntimePipelineStage.VANILLA_OVERRIDES,
+                    RuntimePipelineStageStatus.PASSED,
+                    "No target-content override survived target-model conversion; no patch file was added.",
+                    listOf(artifact),
+                    vanillaOverrideMetadata(mapped, patchEmitted = false),
+                )
+                return prepared
+            }
+            Files.writeString(vanillaOverridesReportPath(artifact), mapped.reportJson, StandardCharsets.UTF_8)
+            val summary = "Patched ${mapped.summary.patchedFields} field(s) across " +
+                "${mapped.summary.patchedContents} target content entry/entries; " +
+                "dropped=${mapped.summary.droppedFields}, " +
+                "mod-side overrides=${mapped.summary.loadTimeOverrides}+${mapped.summary.afterInitOverrides}, " +
+                "unresolvedWatchTargets=${mapped.summary.missingWatchTargets}."
+            logger.info(summary)
+            stages += RuntimePipelineStageRecord(
+                RuntimePipelineStage.VANILLA_OVERRIDES,
+                RuntimePipelineStageStatus.PASSED,
+                summary,
+                listOf(artifact, vanillaOverridesReportPath(artifact)),
+                vanillaOverrideMetadata(mapped, patchEmitted = true),
+            )
+            prepared.copy(
+                files = prepared.files + RuntimePreparedFile(
+                    outputPath = mapped.patchPath,
+                    sourcePaths = emptyList(),
+                    bytes = mapped.patchBytes,
+                    reason = "Generated from runtime-observed changes to target content.",
+                ),
+                diagnostics = prepared.diagnostics + mapped.diagnostics,
+                metadata = prepared.metadata + vanillaOverrideMetadata(mapped, patchEmitted = true),
+            )
+        } catch (error: Throwable) {
+            val summary = "Target-content override mapping failed: ${error.message ?: error::class.java.name}"
+            logger.error(summary)
+            stages += RuntimePipelineStageRecord(
+                RuntimePipelineStage.VANILLA_OVERRIDES,
+                RuntimePipelineStageStatus.FAILED,
+                summary,
+                listOfNotNull(artifact.takeIf(Files::exists)),
+                mapOf("vanillaOverrides" to "on"),
+            )
+            prepared
+        }
+    }
+
+    private fun vanillaOverridesReportPath(artifact: Path): Path =
+        artifact.resolveSibling("vanilla-override-mapping.json")
+
+    private fun vanillaOverrideMetadata(
+        mapped: VanillaOverrideMappingResult,
+        patchEmitted: Boolean,
+    ): Map<String, String> = mapOf(
+        "vanillaOverrides" to "on",
+        "vanillaOverridesPatch" to if (patchEmitted) mapped.patchPath else "notEmitted",
+        "vanillaOverridesPatchedContents" to mapped.summary.patchedContents.toString(),
+        "vanillaOverridesPatchedFields" to mapped.summary.patchedFields.toString(),
+        "vanillaOverridesDroppedFields" to mapped.summary.droppedFields.toString(),
+        "vanillaOverridesObservedFields" to mapped.summary.observedFields.toString(),
+        "vanillaOverridesMissingWatchTargets" to mapped.summary.missingWatchTargets.toString(),
+        "vanillaOverridesLoadTimeOverrides" to mapped.summary.loadTimeOverrides.toString(),
+        "vanillaOverridesAfterInitOverrides" to mapped.summary.afterInitOverrides.toString(),
+        "vanillaOverridesTargetInitRecomputed" to mapped.summary.targetInitRecomputed.toString(),
+    )
 
     private fun writePipelineReport(
         report: Path,

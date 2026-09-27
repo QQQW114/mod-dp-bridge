@@ -828,6 +828,149 @@ final class RuntimeSnapshotSupport {
         return content instanceof MappableContent mapped ? mapped.name : content.getClass().getName() + "#" + content.id;
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Vanilla watch capture.
+    //
+    // A mod may mutate target (vanilla) content before it can be observed through ordinary Content
+    // registration, and the target's own Content#init() may then overwrite those mutations. The only
+    // trustworthy baseline is therefore captured inside the same JVM run, at the moment mod content
+    // creation begins - i.e. before any Mod code has touched the shared content registry. Four phases
+    // are written; the exporter classifies fields by comparing them.
+    // ---------------------------------------------------------------------------------------------
+
+    /** Content types this build can watch. Anything else is a caller bug, not a silent skip. */
+    private static final List<ContentType> VANILLA_WATCH_TYPES = List.of(
+        ContentType.item,
+        ContentType.liquid,
+        ContentType.status,
+        ContentType.unit,
+        ContentType.block
+    );
+
+    private static final int MAX_VANILLA_WATCH_PER_TYPE = 512;
+    private static final int MAX_VANILLA_WATCH_TOTAL = 1_024;
+    private static final int MAX_VANILLA_FIELD_ROWS = 4_096;
+
+    /**
+     * Writes one phase of watched vanilla content as a marker-prefixed TSV:
+     * {@code header}, {@code content}, {@code field} and {@code missing} rows. Every column after the
+     * marker is a Base64URL token so that names, field names and encoded values stay single-column.
+     */
+    static int writeVanillaWatch(Path file, String phase, Path phaseFile, String phaseMarker) throws Exception {
+        String spec = System.getProperty("moddpbridge.runtimeVanillaWatch", "");
+        if (spec.isBlank()) return 0;
+
+        Map<ContentType, List<String>> watch = vanillaWatch(spec);
+        Files.createDirectories(file.getParent());
+        int contentCount = 0;
+        int fieldCount = 0;
+        int missingCount = 0;
+        try (BufferedWriter output = Files.newBufferedWriter(
+            file,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.WRITE
+        )) {
+            writeRow(output, "header", "1", phase, encode(spec));
+            for (Map.Entry<ContentType, List<String>> group : watch.entrySet()) {
+                ContentType type = group.getKey();
+                for (String name : group.getValue()) {
+                    Content content = Vars.content.getByName(type, name);
+                    if (content == null) {
+                        writeRow(output, "missing", type.name(), name, encode("NOT_PRESENT_IN_TARGET"));
+                        missingCount++;
+                        continue;
+                    }
+                    if (content.minfo.mod != null) {
+                        writeRow(output, "missing", type.name(), name, encode("NAME_OWNED_BY_MOD_CONTENT"));
+                        missingCount++;
+                        continue;
+                    }
+                    writeRow(output, "content", type.name(), name, encode(content.getClass().getName()));
+                    contentCount++;
+                    Map<String, String> fields = captureFields(content, resolveFallback(content));
+                    int rows = 0;
+                    for (Map.Entry<String, String> field : fields.entrySet()) {
+                        if (rows++ >= MAX_VANILLA_FIELD_ROWS) break;
+                        writeRow(output, "field", type.name(), name, encode(field.getKey()), encode(field.getValue()));
+                        fieldCount++;
+                    }
+                }
+            }
+        }
+        if (phaseFile != null) {
+            appendVanillaPhase(phaseFile, phaseMarker + "\t" + contentCount + "\t" + fieldCount + "\t" + missingCount);
+        }
+        return contentCount;
+    }
+
+    private static Map<ContentType, List<String>> vanillaWatch(String spec) {
+        Map<ContentType, List<String>> watch = new LinkedHashMap<>();
+        int total = 0;
+        for (String group : spec.split(";")) {
+            String trimmedGroup = group.trim();
+            if (trimmedGroup.isEmpty()) continue;
+            int separator = trimmedGroup.indexOf(':');
+            if (separator <= 0 || separator == trimmedGroup.length() - 1) {
+                throw new IllegalStateException("Malformed vanilla watch group: '" + trimmedGroup + "'.");
+            }
+            ContentType type = vanillaWatchType(trimmedGroup.substring(0, separator).trim());
+            Set<String> names = new LinkedHashSet<>();
+            for (String name : trimmedGroup.substring(separator + 1).split(",")) {
+                String trimmedName = name.trim();
+                if (trimmedName.isEmpty()) continue;
+                if (names.size() >= MAX_VANILLA_WATCH_PER_TYPE) break;
+                names.add(trimmedName);
+            }
+            if (names.isEmpty()) continue;
+            total += names.size();
+            if (total > MAX_VANILLA_WATCH_TOTAL) {
+                throw new IllegalStateException(
+                    "Vanilla watch list exceeds the limit of " + MAX_VANILLA_WATCH_TOTAL + " content names."
+                );
+            }
+            List<String> sorted = new ArrayList<>(names);
+            Collections.sort(sorted);
+            watch.put(type, sorted);
+        }
+        return watch;
+    }
+
+    private static ContentType vanillaWatchType(String name) {
+        for (ContentType candidate : VANILLA_WATCH_TYPES) {
+            if (candidate.name().equalsIgnoreCase(name) || (candidate.name() + "s").equalsIgnoreCase(name)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Unsupported vanilla watch content type: '" + name + "'.");
+    }
+
+    private static void writeRow(BufferedWriter output, String marker, String... columns) throws Exception {
+        StringBuilder row = new StringBuilder(marker);
+        for (String column : columns) {
+            row.append('\t').append(column);
+        }
+        row.append('\n');
+        reserveSnapshotBytes(row.length());
+        output.write(row.toString());
+    }
+
+    private static void appendVanillaPhase(Path file, String line) {
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(
+                file,
+                line + System.lineSeparator(),
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+            );
+        } catch (Exception error) {
+            throw new RuntimeException("Could not write the vanilla watch phase marker.", error);
+        }
+    }
+
     private static String numberType(Number number) {
         if (number instanceof Byte) return "byte";
         if (number instanceof Short) return "short";

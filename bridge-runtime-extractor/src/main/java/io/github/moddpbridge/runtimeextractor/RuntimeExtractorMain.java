@@ -149,6 +149,23 @@ public final class RuntimeExtractorMain {
         Path probeJar = modsDirectory.resolve("000-dpbridge-runtime-trace-probe.jar");
         compileRuntimeProbe(serverJar, runDirectory, probeJar);
 
+        // Vanilla override capture is opt-in: without a watch list the probe writes no vanilla phase
+        // file and the extractor produces no vanilla-overrides.json at all.
+        String watchSpec = arguments.value("vanilla-watch");
+        boolean watchRequested = watchSpec != null && !watchSpec.isBlank();
+        if (watchSpec != null && watchSpec.isBlank()) {
+            throw new IllegalArgumentException("--vanilla-watch must not be blank when supplied.");
+        }
+        Path vanillaDirectory = runDirectory.resolve("vanilla-watch").toAbsolutePath().normalize();
+        Path vanillaPhaseMarkerFile = runDirectory.resolve("vanilla-watch-phases.tsv").toAbsolutePath().normalize();
+        Path vanillaOverridesOutput = arguments.path(
+            "vanilla-overrides-output",
+            output.getParent().resolve("vanilla-overrides.json")
+        ).toAbsolutePath().normalize();
+        if (!watchRequested && arguments.value("vanilla-overrides-output") != null) {
+            throw new IllegalArgumentException("--vanilla-overrides-output requires --vanilla-watch.");
+        }
+
         String javaExecutable = Path.of(
             System.getProperty("java.home"),
             "bin",
@@ -156,7 +173,7 @@ public final class RuntimeExtractorMain {
         ).toString();
         String classPath = System.getProperty("java.class.path") +
             System.getProperty("path.separator") + serverJar.toAbsolutePath().normalize();
-        List<String> command = List.of(
+        List<String> command = new ArrayList<>(List.of(
             javaExecutable,
             "-Xms64m",
             "-Xmx" + maxHeapMib + "m",
@@ -196,7 +213,18 @@ public final class RuntimeExtractorMain {
             finalSnapshotFile.toString(),
             "--max-snapshot-bytes",
             Long.toString(maxSnapshotBytes)
-        );
+        ));
+        if (watchRequested) {
+            command.add("-Dmoddpbridge.runtimeVanillaWatch=" + watchSpec);
+            command.add("-Dmoddpbridge.runtimeVanillaPhaseFile=" + vanillaPhaseMarkerFile);
+            for (String phase : VanillaOverrideExporter.PHASES) {
+                command.add(vanillaPropertyName(phase) + "=" + vanillaPhaseFile(vanillaDirectory, phase));
+            }
+            command.add("--vanilla-dir");
+            command.add(vanillaDirectory.toString());
+            command.add("--vanilla-overrides-output");
+            command.add(vanillaOverridesOutput.toString());
+        }
         Files.writeString(commandLog, renderCommand(command) + System.lineSeparator(), StandardCharsets.UTF_8);
 
         System.out.println("Runtime extraction WILL execute Mod code in a child JVM.");
@@ -256,6 +284,29 @@ public final class RuntimeExtractorMain {
             return 6;
         }
 
+        if (watchRequested) {
+            List<Path> vanillaArtifacts = new ArrayList<>();
+            for (String phase : VanillaOverrideExporter.PHASES) {
+                vanillaArtifacts.add(vanillaPhaseFile(vanillaDirectory, phase));
+            }
+            vanillaArtifacts.add(vanillaPhaseMarkerFile);
+            vanillaArtifacts.add(vanillaOverridesOutput);
+            for (Path artifact : vanillaArtifacts) {
+                if (!Files.isRegularFile(artifact)) {
+                    System.err.println("ERROR: Vanilla override capture did not produce " + artifact);
+                    return 7;
+                }
+            }
+            try {
+                requireSnapshotArtifactBudget(vanillaArtifacts, maxSnapshotBytes);
+            } catch (IOException error) {
+                System.err.println("ERROR: Vanilla override artifact validation failed: " + error.getMessage());
+                return 7;
+            }
+            System.out.println("Vanilla override capture directory: " + vanillaDirectory);
+            System.out.println("Vanilla overrides JSON: " + vanillaOverridesOutput);
+        }
+
         System.out.println("Runtime content JSON: " + output);
         return 0;
     }
@@ -273,6 +324,11 @@ public final class RuntimeExtractorMain {
         long maxSnapshotBytes = arguments.longValue("max-snapshot-bytes", DEFAULT_MAX_SNAPSHOT_MIB * MIB);
         if (maxSnapshotBytes <= 0L) {
             throw new IllegalArgumentException("--max-snapshot-bytes must be positive.");
+        }
+        Path vanillaDirectory = arguments.optionalPath("vanilla-dir");
+        Path vanillaOverridesOutput = arguments.optionalPath("vanilla-overrides-output");
+        if ((vanillaDirectory == null) != (vanillaOverridesOutput == null)) {
+            throw new IllegalArgumentException("--vanilla-dir and --vanilla-overrides-output must be supplied together.");
         }
 
         Class<?> consType = Class.forName("arc.func.Cons");
@@ -293,7 +349,9 @@ public final class RuntimeExtractorMain {
                         preContentInitSnapshotFile,
                         postContentInitSnapshotFile,
                         finalSnapshotFile,
-                        maxSnapshotBytes
+                        maxSnapshotBytes,
+                        vanillaDirectory,
+                        vanillaOverridesOutput
                     ));
                 }
                 if ("toString".equals(method.getName())) return "mod-dp-bridge-runtime-extractor";
@@ -360,7 +418,9 @@ public final class RuntimeExtractorMain {
         Path preContentInitSnapshotFile,
         Path postContentInitSnapshotFile,
         Path finalSnapshotFile,
-        long maxSnapshotBytes
+        long maxSnapshotBytes,
+        Path vanillaDirectory,
+        Path vanillaOverridesOutput
     ) {
         try {
             captureFinalSnapshotViaProbe();
@@ -381,6 +441,17 @@ public final class RuntimeExtractorMain {
                 finalSnapshotFile,
                 maxSnapshotBytes
             );
+            if (vanillaDirectory != null && vanillaOverridesOutput != null) {
+                VanillaOverrideExporter.Result vanilla = VanillaOverrideExporter.export(vanillaDirectory);
+                Files.createDirectories(vanillaOverridesOutput.getParent());
+                Files.writeString(
+                    vanillaOverridesOutput,
+                    VanillaOverrideExporter.toJson(vanilla, modId),
+                    StandardCharsets.UTF_8
+                );
+                vanilla.diagnostics().forEach(diagnostic -> System.out.println("VANILLA_WATCH_DIAGNOSTIC=" + diagnostic));
+                System.out.println("VANILLA_WATCH_SUMMARY=" + VanillaOverrideExporter.toSummary(vanilla));
+            }
             System.out.println("RUNTIME_EXTRACTOR_OUTPUT=" + output);
             System.out.flush();
             System.exit(0);
@@ -718,6 +789,24 @@ public final class RuntimeExtractorMain {
                 earlierPhase + " contains " + removed.size() + " Content key(s) missing from " + laterPhase + "."
             );
         }
+    }
+
+    /**
+     * Canonical file name of one vanilla watch phase. The launcher derives probe system properties from
+     * this rule and the worker reads the same files back, so both sides must share it.
+     */
+    static Path vanillaPhaseFile(Path directory, String phase) {
+        return directory.resolve("vanilla-" + phase.toLowerCase(Locale.ROOT).replace('_', '-') + ".tsv");
+    }
+
+    private static String vanillaPropertyName(String phase) {
+        return switch (phase) {
+            case VanillaOverrideExporter.BEFORE_MOD_CONTENT -> "moddpbridge.runtimeVanillaBeforeModContentFile";
+            case VanillaOverrideExporter.PRE_CONTENT_INIT -> "moddpbridge.runtimeVanillaPreContentInitFile";
+            case VanillaOverrideExporter.POST_CONTENT_INIT -> "moddpbridge.runtimeVanillaPostContentInitFile";
+            case VanillaOverrideExporter.FINAL_AFTER_MOD_INIT -> "moddpbridge.runtimeVanillaFinalFile";
+            default -> throw new IllegalArgumentException("Unknown vanilla watch phase: " + phase);
+        };
     }
 
     private static void compileRuntimeProbe(Path serverJar, Path runDirectory, Path probeJar) throws IOException {
@@ -1145,7 +1234,14 @@ public final class RuntimeExtractorMain {
                 [--timeout-seconds <seconds>] \\
                 [--max-heap-mib <256..16384>] \\
                 [--max-snapshot-mib <32..4096>] \\
+                [--vanilla-watch <type:name,name;type:name>] \\
+                [--vanilla-overrides-output <vanilla-overrides.json>] \\
                 --allow-mod-execution
+
+            The vanilla watch list captures target (non-Mod) content fields at four phases of one run
+            and classifies the fields the supplied Mod actually changed. Supported types are item,
+            liquid, status, unit and block, for example:
+              --vanilla-watch "block:salvo,scatter;unit:dagger;item:copper"
             """);
     }
 
@@ -1171,6 +1267,12 @@ public final class RuntimeExtractorMain {
         Path path(String key, Path defaultValue) {
             String value = values.get(key);
             return value == null ? defaultValue.toAbsolutePath().normalize() : Path.of(value).toAbsolutePath().normalize();
+        }
+
+        Path optionalPath(String key) {
+            String value = values.get(key);
+            if (value == null || value.isBlank()) return null;
+            return Path.of(value).toAbsolutePath().normalize();
         }
 
         long longValue(String key, long defaultValue) {

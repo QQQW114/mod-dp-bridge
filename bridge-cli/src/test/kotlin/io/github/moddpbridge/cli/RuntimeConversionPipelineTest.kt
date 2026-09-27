@@ -159,7 +159,12 @@ class RuntimeConversionPipelineTest {
         val stages = report.getValue("stages").jsonArray.map { it.jsonObject }
         assertEquals("failed", stages.single { it.getValue("stage").jsonPrimitive.content == "runtimeExtraction" }
             .getValue("status").jsonPrimitive.content)
-        assertEquals(7, stages.size)
+        assertEquals(8, stages.size)
+        assertEquals(
+            "notRun",
+            stages.single { it.getValue("stage").jsonPrimitive.content == "vanillaOverrides" }
+                .getValue("status").jsonPrimitive.content,
+        )
     }
 
     @Test

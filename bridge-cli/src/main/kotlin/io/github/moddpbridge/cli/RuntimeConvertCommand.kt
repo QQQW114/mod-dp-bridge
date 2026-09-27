@@ -97,6 +97,24 @@ class RuntimeConvertCommand : Callable<Int> {
     )
     var hybridMaxRounds: Int = 8
 
+    @Option(
+        names = ["--vanilla-overrides"],
+        arity = "0..1",
+        fallbackValue = "on",
+        paramLabel = "on|off",
+        description = [
+            "Reproduce the Mod's changes to target (vanilla) content as patches/vanilla-overrides.hjson. " +
+                "Requires --source, because the watched target names are read from the Mod's Java source. Default: on",
+        ],
+    )
+    var vanillaOverrides: String = "on"
+
+    private fun vanillaOverridesEnabled(): Boolean = when (val value = vanillaOverrides.trim().lowercase()) {
+        "on", "true", "yes", "1", "" -> true
+        "off", "false", "no", "0" -> false
+        else -> throw IllegalArgumentException("--vanilla-overrides must be on or off, not '$value'.")
+    }
+
     override fun call(): Int {
         val normalizedModJar = modJar.toAbsolutePath().normalize()
         val normalizedServerJar = serverJar.toAbsolutePath().normalize()
@@ -116,6 +134,7 @@ class RuntimeConvertCommand : Callable<Int> {
             logger.info("Mod JAR: $normalizedModJar")
             logger.info("Server JAR: $normalizedServerJar")
             logger.info("Optional source: ${normalizedSource ?: "not supplied"}")
+            logger.info("Target-content overrides: ${if (vanillaOverridesEnabled()) "on" else "off"}")
             logger.info("Output: $outputDirectory")
 
             return try {
@@ -130,6 +149,7 @@ class RuntimeConvertCommand : Callable<Int> {
                         serverValidationTimeout = Duration.ofSeconds(serverTimeoutSeconds),
                         allowModExecution = allowModExecution,
                         hybridMaxRounds = hybridMaxRounds,
+                        vanillaOverrides = vanillaOverridesEnabled(),
                     ),
                     logger,
                 )

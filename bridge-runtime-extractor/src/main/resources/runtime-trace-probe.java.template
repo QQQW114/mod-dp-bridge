@@ -26,6 +26,14 @@ public class RuntimeTraceProbe extends Plugin {
     private static final Path preContentInitSnapshotFile = propertyPath("moddpbridge.runtimePreContentInitSnapshotFile");
     private static final Path postContentInitSnapshotFile = propertyPath("moddpbridge.runtimePostContentInitSnapshotFile");
     private static final Path finalSnapshotFile = propertyPath("moddpbridge.runtimeFinalSnapshotFile");
+    private static final Path vanillaPhaseFile = optionalPropertyPath("moddpbridge.runtimeVanillaPhaseFile");
+    private static final Path vanillaBeforeModContentFile =
+        optionalPropertyPath("moddpbridge.runtimeVanillaBeforeModContentFile");
+    private static final Path vanillaPreContentInitFile =
+        optionalPropertyPath("moddpbridge.runtimeVanillaPreContentInitFile");
+    private static final Path vanillaPostContentInitFile =
+        optionalPropertyPath("moddpbridge.runtimeVanillaPostContentInitFile");
+    private static final Path vanillaFinalFile = optionalPropertyPath("moddpbridge.runtimeVanillaFinalFile");
     private static boolean finalSnapshotWritten;
 
     public RuntimeTraceProbe() {
@@ -62,15 +70,29 @@ public class RuntimeTraceProbe extends Plugin {
             traces.put(content, Thread.currentThread().getStackTrace());
         }
 
+        /**
+         * Captures the pristine target content baseline immediately before any Mod content is created,
+         * while no Mod code has been able to mutate target content yet. {@code Mod#loadContent()} - and
+         * therefore every load-time content override - runs inside this call, so the baseline cannot be
+         * taken from any later phase.
+         */
+        @Override
+        public void createModContent() {
+            writeVanilla(vanillaBeforeModContentFile, "BEFORE_MOD_CONTENT", "VANILLA_BEFORE_MOD_CONTENT");
+            super.createModContent();
+        }
+
         @Override
         public void init() {
             int preInit = writeSnapshot(preContentInitSnapshotFile, "PRE_CONTENT_INIT");
             append(phaseFile, "PRE_CONTENT_INIT\t" + preInit + "\n");
             System.out.println("DPBRIDGE_PHASE\tPRE_CONTENT_INIT\t" + preInit);
+            writeVanilla(vanillaPreContentInitFile, "PRE_CONTENT_INIT", "VANILLA_PRE_CONTENT_INIT");
             super.init();
             int postInit = writeSnapshot(postContentInitSnapshotFile, "POST_CONTENT_INIT");
             append(phaseFile, "POST_CONTENT_INIT\t" + postInit + "\n");
             System.out.println("DPBRIDGE_PHASE\tPOST_CONTENT_INIT\t" + postInit);
+            writeVanilla(vanillaPostContentInitFile, "POST_CONTENT_INIT", "VANILLA_POST_CONTENT_INIT");
         }
     }
 
@@ -81,9 +103,20 @@ public class RuntimeTraceProbe extends Plugin {
         if (finalSnapshotWritten) return;
         int count = writeSnapshot(finalSnapshotFile, "FINAL_AFTER_MOD_INIT");
         append(phaseFile, "FINAL_AFTER_MOD_INIT\t" + count + "\n");
+        writeVanilla(vanillaFinalFile, "FINAL_AFTER_MOD_INIT", "VANILLA_FINAL_AFTER_MOD_INIT");
         writeTraces();
         finalSnapshotWritten = true;
         System.out.println("DPBRIDGE_PHASE\tFINAL_AFTER_MOD_INIT\t" + count);
+    }
+
+    private static void writeVanilla(Path file, String phase, String marker) {
+        if (file == null) return;
+        try {
+            int count = RuntimeSnapshotSupport.writeVanillaWatch(file, phase, vanillaPhaseFile, marker);
+            System.out.println("DPBRIDGE_VANILLA\t" + marker + "\t" + count);
+        } catch (Exception error) {
+            throw new RuntimeException("Could not capture the vanilla watch snapshot for phase " + phase + ".", error);
+        }
     }
 
     private static int writeSnapshot(Path file, String phase) {
@@ -127,6 +160,13 @@ public class RuntimeTraceProbe extends Plugin {
     private static Path propertyPath(String name) {
         String value = System.getProperty(name);
         if (value == null || value.isBlank()) throw new IllegalStateException("Missing system property " + name);
+        return Path.of(value).toAbsolutePath().normalize();
+    }
+
+    /** Vanilla watch capture is optional; an absent property disables the whole vanilla watch feature. */
+    private static Path optionalPropertyPath(String name) {
+        String value = System.getProperty(name);
+        if (value == null || value.isBlank()) return null;
         return Path.of(value).toAbsolutePath().normalize();
     }
 
