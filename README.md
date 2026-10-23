@@ -2,6 +2,8 @@
 
 将 Mindustry Mod、旧式 CP 和已有 Data Pack **尝试并尽力迁移**为 Mindustry **v159.7 / B480 Data Assets（DP）**。
 
+不要对本项目抱有任何期望，它后面应该会成为一个针对饱和火力（1 / 2）的转换器，溜溜梅在readme中写的内容并不靠谱，它能勉强转换SF2，但也仅仅能做到这一点了
+
 当前主线同时提供本地 CLI 和仅监听 loopback 的本地 Web UI。对可信的已编译 Java Mod，工具使用官方 Mindustry v159.7 独立 JVM 真实加载 Mod，读取实际注册的 Content，再结合可选源码 AST 候选和官方 `DataPatcher.apply` 筛选，生成可审计的 DP；声明式 Mod、CP 和已有 DP 仍可使用不执行输入代码的静态模式。
 
 > [!IMPORTANT]
